@@ -13,11 +13,12 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from KITTUBOT.config import config
 from KITTUBOT.database.users import get_user
+from KITTUBOT.core.permissions import resolve_target_user, TargetUser
 
 __mod_name__ = "Tools"
 __help__ = """
 <blockquote>🛠️ <b>ᴜᴛɪʟɪᴛɪᴇs & ᴛᴏᴏʟs:</b>
-• <code>/info</code> - (ʀᴇᴘʟʏ) ᴜsᴇʀ ɪᴅ, ᴅᴄ & ᴘʀᴏғɪʟᴇ sᴛᴀᴛs
+• <code>/info [reply|@user|id]</code> - ᴜsᴇʀ ɪᴅ, ᴅᴄ & ᴘʀᴏғɪʟᴇ sᴛᴀᴛs
 • <code>/id</code> - ᴠɪᴇᴡ ʏᴏᴜʀs ᴏʀ ᴄʜᴀᴛ's ɪᴅ
 • <code>/tr [lang] [txt]</code> - ᴛʀᴀɴsʟᴀᴛᴇ ᴀɴʏ ᴛᴇxᴛ
 • <code>/wiki [query]</code> - ɪɴsᴛᴀɴᴛ ᴡɪᴋɪᴘᴇᴅɪᴀ sᴜᴍᴍᴀʀʏ
@@ -42,9 +43,10 @@ async def id_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    reply = update.message.reply_to_message
-    target = reply.from_user if reply and reply.from_user else user
+    target, _ = await resolve_target_user(update, context)
+    if not target:
+        user = update.effective_user
+        target = TargetUser(user.id, user.first_name, user.username or "", user)
 
     u_data = await get_user(target.id)
     balance = u_data.get("balance", 0) if u_data else 0
@@ -52,7 +54,7 @@ async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     deaths = u_data.get("deaths", 0) if u_data else 0
 
     username_str = f"@{target.username}" if target.username else "None"
-    premium_str = "Yes ⭐" if target.is_premium else "No"
+    premium_str = "Yes ⭐" if (target.user and target.user.is_premium) else "No"
 
     text = (
         f"👤 <b>ᴜsᴇʀ ɪɴғᴏʀᴍᴀᴛɪᴏɴ — {target.first_name}</b>\n\n"

@@ -11,6 +11,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from KITTUBOT.config import config
 from KITTUBOT.core.filters import sudo_filter
+from KITTUBOT.core.permissions import resolve_target_user
 from KITTUBOT.database.users import ensure_user, update_balance
 from KITTUBOT.database import users_col
 
@@ -18,8 +19,8 @@ __mod_name__ = "Admin"
 __help__ = """
 <blockquote>👑 <b>sᴜᴅᴏ & ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴄᴏɴᴛʀᴏʟs:</b>
 • <code>/sudo</code> - ᴠɪᴇᴡ sᴜᴅᴏ ᴄᴏɴᴛʀᴏʟ ᴘᴀɴᴇʟ
-• <code>/addcoins [amt]</code> - (ʀᴇᴘʟʏ) ɢʀᴀɴᴛ ᴄᴏɪɴs
-• <code>/rmcoins [amt]</code> - (ʀᴇᴘʟʏ) ᴅᴇᴅᴜᴄᴛ ᴄᴏɪɴs
+• <code>/addcoins [reply|@user|id] [amt]</code> - ɢʀᴀɴᴛ ᴄᴏɪɴs
+• <code>/rmcoins [reply|@user|id] [amt]</code> - ᴅᴇᴅᴜᴄᴛ ᴄᴏɪɴs
 • <code>/broadcast [txt]</code> - ᴀɴɴᴏᴜɴᴄᴇ ᴛᴏ ᴀʟʟ ᴜsᴇʀs
 • <code>/sudolist</code> - ᴠɪᴇᴡ ʙᴏᴛ ᴏᴘᴇʀᴀᴛᴏʀs</blockquote>
 """
@@ -37,20 +38,28 @@ async def sudo_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def addcoins_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reply = update.message.reply_to_message
-    if not reply or not reply.from_user:
-        await update.message.reply_html("⚠️ Reply to a user to grant coins!")
+    target, rem_args = await resolve_target_user(update, context)
+    if not target:
+        await update.message.reply_html(
+            "⚠️ <b>Specify a user to grant coins to!</b>\n"
+            "<i>Reply to their message or provide username / user ID:</i>\n"
+            "• <code>/addcoins @username [amount]</code>\n"
+            "• <code>/addcoins 123456789 [amount]</code>\n"
+            "• <code>/addcoins [amount]</code> (by replying)"
+        )
         return
 
-    if not context.args or not context.args[0].isdigit():
-        await update.message.reply_html("⚠️ Provide the amount! E.g. <code>/addcoins 50000</code>")
+    amount = None
+    for arg in rem_args:
+        if arg.isdigit():
+            amount = int(arg)
+            break
+
+    if amount is None or amount <= 0:
+        await update.message.reply_html("⚠️ Provide a valid positive amount! E.g. <code>/addcoins @user 50000</code>")
         return
 
-    amount = int(context.args[0])
-    target = reply.from_user
-    await ensure_user(target)
     new_bal = await update_balance(target.id, amount)
-
     await update.message.reply_html(
         f"✅ <b>ɢʀᴀɴᴛᴇᴅ {amount:,} ᴄᴏɪɴs</b> to {target.mention_html()}!\n"
         f"New balance: <code>{new_bal:,}</code>"
@@ -58,20 +67,28 @@ async def addcoins_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def rmcoins_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reply = update.message.reply_to_message
-    if not reply or not reply.from_user:
-        await update.message.reply_html("⚠️ Reply to a user to deduct coins!")
+    target, rem_args = await resolve_target_user(update, context)
+    if not target:
+        await update.message.reply_html(
+            "⚠️ <b>Specify a user to deduct coins from!</b>\n"
+            "<i>Reply to their message or provide username / user ID:</i>\n"
+            "• <code>/rmcoins @username [amount]</code>\n"
+            "• <code>/rmcoins 123456789 [amount]</code>\n"
+            "• <code>/rmcoins [amount]</code> (by replying)"
+        )
         return
 
-    if not context.args or not context.args[0].isdigit():
-        await update.message.reply_html("⚠️ Provide amount! E.g. <code>/rmcoins 5000</code>")
+    amount = None
+    for arg in rem_args:
+        if arg.isdigit():
+            amount = int(arg)
+            break
+
+    if amount is None or amount <= 0:
+        await update.message.reply_html("⚠️ Provide a valid positive amount! E.g. <code>/rmcoins @user 5000</code>")
         return
 
-    amount = int(context.args[0])
-    target = reply.from_user
-    await ensure_user(target)
     new_bal = await update_balance(target.id, -amount)
-
     await update.message.reply_html(
         f"🔻 <b>ᴅᴇᴅᴜᴄᴛᴇᴅ {amount:,} ᴄᴏɪɴs</b> from {target.mention_html()}!\n"
         f"New balance: <code>{new_bal:,}</code>"

@@ -6,6 +6,7 @@
 🐾 KITTUBOT Group Moderation & Administration Engine
 Enterprise-grade moderation tools: Ban, Unban, Mute, Unmute, Kick, Strike Warnings,
 Bulk Message Purge, Pinning, and Customizable Welcome Greetings.
+Supports targeting by Reply, @username, and numeric Telegram user ID.
 """
 
 import time
@@ -20,20 +21,26 @@ from telegram.ext import (
     filters,
 )
 from KITTUBOT.config import config
-from KITTUBOT.core.permissions import is_user_admin, can_bot_restrict, can_bot_delete
+from KITTUBOT.core.permissions import (
+    is_user_admin,
+    can_bot_restrict,
+    can_bot_delete,
+    resolve_target_user,
+    TargetUser,
+)
 from KITTUBOT.database import warns_col, chats_col
 
 __mod_name__ = "Moderation"
 __help__ = """
 <blockquote>🛡️ <b>ɢʀᴏᴜᴘ ᴍᴏᴅᴇʀᴀᴛɪᴏɴ & ᴛᴏᴏʟs:</b>
-• <code>/ban [reason]</code> - (ʀᴇᴘʟʏ) ʙᴀɴ ᴜsᴇʀ ғʀᴏᴍ ɢʀᴏᴜᴘ
-• <code>/unban</code> - (ʀᴇᴘʟʏ|ɪᴅ) ᴜɴʙᴀɴ ᴀ ᴍᴇᴍʙᴇʀ
-• <code>/mute [time]</code> - (ʀᴇᴘʟʏ) ᴍᴜᴛᴇ ᴍᴇᴍʙᴇʀ (ᴇ.ɢ. 10m, 2h)
-• <code>/unmute</code> - (ʀᴇᴘʟʏ) ʀᴇsᴛᴏʀᴇ ᴠᴏɪᴄᴇ
-• <code>/kick</code> - (ʀᴇᴘʟʏ) ᴋɪᴄᴋ ᴜsᴇʀ ғʀᴏᴍ ᴄʜᴀᴛ
-• <code>/warn [reason]</code> - (ʀᴇᴘʟʏ) ɪssᴜᴇ sᴛʀɪᴋᴇ (3 ᴡᴀʀɴs = ʙᴀɴ)
-• <code>/warns</code> - (ʀᴇᴘʟʏ) ᴄʜᴇᴄᴋ sᴛʀɪᴋᴇ ᴄᴏᴜɴᴛ
-• <code>/rmwarn</code> - (ʀᴇᴘʟʏ) ʀᴇsᴇᴛ ᴜsᴇʀ ᴡᴀʀɴɪɴɢs
+• <code>/ban [reply|@user|id] [reason]</code> - ʙᴀɴ ᴜsᴇʀ ғʀᴏᴍ ɢʀᴏᴜᴘ
+• <code>/unban [reply|@user|id]</code> - ᴜɴʙᴀɴ ᴀ ᴍᴇᴍʙᴇʀ
+• <code>/mute [reply|@user|id] [time]</code> - ᴍᴜᴛᴇ ᴍᴇᴍʙᴇʀ (ᴇ.ɢ. 10m, 2h)
+• <code>/unmute [reply|@user|id]</code> - ʀᴇsᴛᴏʀᴇ ᴠᴏɪᴄᴇ
+• <code>/kick [reply|@user|id] [reason]</code> - ᴋɪᴄᴋ ᴜsᴇʀ ғʀᴏᴍ ᴄʜᴀᴛ
+• <code>/warn [reply|@user|id] [reason]</code> - ɪssᴜᴇ sᴛʀɪᴋᴇ (3 ᴡᴀʀɴs = ʙᴀɴ)
+• <code>/warns [reply|@user|id]</code> - ᴄʜᴇᴄᴋ sᴛʀɪᴋᴇ ᴄᴏᴜɴᴛ
+• <code>/rmwarn [reply|@user|id]</code> - ʀᴇsᴇᴛ ᴜsᴇʀ ᴡᴀʀɴɪɴɢs
 • <code>/purge</code> - (ʀᴇᴘʟʏ) ʙᴜʟᴋ ᴅᴇʟᴇᴛᴇ ᴍᴇssᴀɢᴇs
 • <code>/del</code> - (ʀᴇᴘʟʏ) ᴅᴇʟᴇᴛᴇ ᴀ sɪɴɢʟᴇ ᴍᴇssᴀɢᴇ
 • <code>/pin</code> & <code>/unpin</code> - (ʀᴇᴘʟʏ) ᴘɪɴ ᴀɴɴᴏᴜɴᴄᴇᴍᴇɴᴛ
@@ -76,12 +83,17 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_html("❌ I need <b>Ban Users</b> admin permissions to execute this!")
         return
 
-    reply = update.message.reply_to_message
-    if not reply or not reply.from_user:
-        await update.message.reply_html("⚠️ <b>Reply to the member</b> you wish to ban!")
+    target, rem_args = await resolve_target_user(update, context)
+    if not target:
+        await update.message.reply_html(
+            "⚠️ <b>Specify the user to ban!</b>\n"
+            "<i>Reply to their message or provide @username / user ID:</i>\n"
+            "• <code>/ban @username [reason]</code>\n"
+            "• <code>/ban 123456789 [reason]</code>\n"
+            "• <code>/ban [reason]</code> (by replying)"
+        )
         return
 
-    target = reply.from_user
     if target.id == user.id:
         await update.message.reply_html("😂 You cannot ban yourself!")
         return
@@ -92,7 +104,7 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_html("🛡️ You cannot ban a fellow administrator!")
         return
 
-    reason = " ".join(context.args) if context.args else "No reason specified"
+    reason = " ".join(rem_args) if rem_args else "No reason specified"
 
     try:
         await chat.ban_member(target.id)
@@ -109,7 +121,6 @@ async def ban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
-    bot_info = await context.bot.get_me()
 
     if chat.type == "private":
         return
@@ -118,25 +129,22 @@ async def unban_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_html("⚠️ Only administrators can use /unban!")
         return
 
-    reply = update.message.reply_to_message
-    target_id = None
-    target_name = "User"
-
-    if reply and reply.from_user:
-        target_id = reply.from_user.id
-        target_name = reply.from_user.first_name
-    elif context.args and context.args[0].isdigit():
-        target_id = int(context.args[0])
-        target_name = f"<code>{target_id}</code>"
-    else:
-        await update.message.reply_html("⚠️ Reply to a message or provide user ID: <code>/unban 12345678</code>")
+    target, _ = await resolve_target_user(update, context)
+    if not target:
+        await update.message.reply_html(
+            "⚠️ <b>Specify the user to unban!</b>\n"
+            "<i>Reply to a message or provide @username / user ID:</i>\n"
+            "• <code>/unban @username</code>\n"
+            "• <code>/unban 123456789</code>\n"
+            "• <code>/unban</code> (by replying)"
+        )
         return
 
     try:
-        await chat.unban_member(target_id)
+        await chat.unban_member(target.id)
         await update.message.reply_html(
             f"✅ <b>ᴍᴇᴍʙᴇʀ ᴜɴʙᴀɴɴᴇᴅ!</b>\n\n"
-            f"<blockquote>👤 <b>Target:</b> {target_name}\n"
+            f"<blockquote>👤 <b>Target:</b> {target.mention_html()} (<code>{target.id}</code>)\n"
             f"👮 <b>Admin:</b> {user.mention_html()}</blockquote>"
         )
     except Exception as e:
@@ -159,23 +167,40 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_html("❌ I need <b>Restrict Users</b> admin permission to mute!")
         return
 
-    reply = update.message.reply_to_message
-    if not reply or not reply.from_user:
-        await update.message.reply_html("⚠️ <b>Reply to the user</b> you want to mute!")
+    target, rem_args = await resolve_target_user(update, context)
+    if not target:
+        await update.message.reply_html(
+            "⚠️ <b>Specify the user to mute!</b>\n"
+            "<i>Reply to their message or provide @username / user ID:</i>\n"
+            "• <code>/mute @username 10m [reason]</code>\n"
+            "• <code>/mute 123456789 2h</code>\n"
+            "• <code>/mute 30m</code> (by replying)"
+        )
         return
 
-    target = reply.from_user
+    if target.id == user.id:
+        await update.message.reply_html("😂 You cannot mute yourself!")
+        return
+    if target.id == bot_info.id:
+        await update.message.reply_html("😂 I cannot mute myself!")
+        return
     if await is_user_admin(chat, target.id):
         await update.message.reply_html("🛡️ You cannot mute an administrator!")
         return
 
     duration = None
     time_str = "Indefinitely"
-    if context.args:
-        td = parse_time_duration(context.args[0])
+    reason = "No reason specified"
+
+    if rem_args:
+        td = parse_time_duration(rem_args[0])
         if td:
             duration = datetime.utcnow() + td
-            time_str = context.args[0]
+            time_str = rem_args[0]
+            if len(rem_args) > 1:
+                reason = " ".join(rem_args[1:])
+        else:
+            reason = " ".join(rem_args)
 
     try:
         permissions = ChatPermissions(
@@ -187,9 +212,10 @@ async def mute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await chat.restrict_member(target.id, permissions=permissions, until_date=duration)
         await update.message.reply_html(
             f"🤐 <b>ᴍᴇᴍʙᴇʀ ᴍᴜᴛᴇᴅ!</b>\n\n"
-            f"<blockquote>👤 <b>User:</b> {target.mention_html()}\n"
+            f"<blockquote>👤 <b>User:</b> {target.mention_html()} (<code>{target.id}</code>)\n"
             f"👮 <b>Admin:</b> {user.mention_html()}\n"
-            f"⏳ <b>Duration:</b> <code>{time_str}</code></blockquote>"
+            f"⏳ <b>Duration:</b> <code>{time_str}</code>\n"
+            f"📝 <b>Reason:</b> <i>{reason}</i></blockquote>"
         )
     except Exception as e:
         await update.message.reply_html(f"❌ Failed to mute member: <code>{e}</code>")
@@ -206,12 +232,17 @@ async def unmute_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_html("⚠️ Only administrators can use /unmute!")
         return
 
-    reply = update.message.reply_to_message
-    if not reply or not reply.from_user:
-        await update.message.reply_html("⚠️ <b>Reply to the user</b> to unmute them!")
+    target, _ = await resolve_target_user(update, context)
+    if not target:
+        await update.message.reply_html(
+            "⚠️ <b>Specify the user to unmute!</b>\n"
+            "<i>Reply to their message or provide @username / user ID:</i>\n"
+            "• <code>/unmute @username</code>\n"
+            "• <code>/unmute 123456789</code>\n"
+            "• <code>/unmute</code> (by replying)"
+        )
         return
 
-    target = reply.from_user
     try:
         permissions = ChatPermissions(
             can_send_messages=True,
@@ -246,15 +277,32 @@ async def kick_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_html("⚠️ Only administrators can kick members!")
         return
 
-    reply = update.message.reply_to_message
-    if not reply or not reply.from_user:
-        await update.message.reply_html("⚠️ <b>Reply to the member</b> you want to kick!")
+    if not await can_bot_restrict(chat, bot_info.id):
+        await update.message.reply_html("❌ I need <b>Ban Users</b> admin permissions to kick members!")
         return
 
-    target = reply.from_user
+    target, rem_args = await resolve_target_user(update, context)
+    if not target:
+        await update.message.reply_html(
+            "⚠️ <b>Specify the member to kick!</b>\n"
+            "<i>Reply to their message or provide @username / user ID:</i>\n"
+            "• <code>/kick @username [reason]</code>\n"
+            "• <code>/kick 123456789 [reason]</code>\n"
+            "• <code>/kick [reason]</code> (by replying)"
+        )
+        return
+
+    if target.id == user.id:
+        await update.message.reply_html("😂 You cannot kick yourself!")
+        return
+    if target.id == bot_info.id:
+        await update.message.reply_html("😂 I cannot kick myself!")
+        return
     if await is_user_admin(chat, target.id):
         await update.message.reply_html("🛡️ You cannot kick an administrator!")
         return
+
+    reason = " ".join(rem_args) if rem_args else "No reason specified"
 
     try:
         # Ban then immediately unban = kick
@@ -262,7 +310,9 @@ async def kick_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await chat.unban_member(target.id)
         await update.message.reply_html(
             f"👢 <b>ᴍᴇᴍʙᴇʀ ᴋɪᴄᴋᴇᴅ!</b>\n\n"
-            f"<blockquote>{target.mention_html()} was removed from the group by {user.mention_html()}.</blockquote>"
+            f"<blockquote>👤 <b>Target:</b> {target.mention_html()} (<code>{target.id}</code>)\n"
+            f"👮 <b>Admin:</b> {user.mention_html()}\n"
+            f"📝 <b>Reason:</b> <i>{reason}</i></blockquote>"
         )
     except Exception as e:
         await update.message.reply_html(f"❌ Failed to kick: <code>{e}</code>")
@@ -280,17 +330,28 @@ async def warn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_html("⚠️ Only administrators can issue warnings!")
         return
 
-    reply = update.message.reply_to_message
-    if not reply or not reply.from_user:
-        await update.message.reply_html("⚠️ <b>Reply to the user</b> you want to warn!")
+    target, rem_args = await resolve_target_user(update, context)
+    if not target:
+        await update.message.reply_html(
+            "⚠️ <b>Specify the user to warn!</b>\n"
+            "<i>Reply to their message or provide @username / user ID:</i>\n"
+            "• <code>/warn @username [reason]</code>\n"
+            "• <code>/warn 123456789 [reason]</code>\n"
+            "• <code>/warn [reason]</code> (by replying)"
+        )
         return
 
-    target = reply.from_user
+    if target.id == user.id:
+        await update.message.reply_html("😂 You cannot warn yourself!")
+        return
+    if target.id == bot_info.id:
+        await update.message.reply_html("😂 I cannot warn myself!")
+        return
     if await is_user_admin(chat, target.id):
         await update.message.reply_html("🛡️ You cannot warn an administrator!")
         return
 
-    reason = " ".join(context.args) if context.args else "Rule violation"
+    reason = " ".join(rem_args) if rem_args else "Rule violation"
 
     # Increment warning count in DB
     res = await warns_col.find_one_and_update(
@@ -315,7 +376,7 @@ async def warn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_html(
             f"⚠️ <b>ᴡᴀʀɴɪɴɢ ɪssᴜᴇᴅ ({warn_count}/3)!</b>\n\n"
-            f"<blockquote>👤 <b>Target:</b> {target.mention_html()}\n"
+            f"<blockquote>👤 <b>Target:</b> {target.mention_html()} (<code>{target.id}</code>)\n"
             f"👮 <b>Admin:</b> {user.mention_html()}\n"
             f"📝 <b>Reason:</b> <i>{reason}</i>\n"
             f"⚡ <i>3 warnings will result in an automatic ban!</i></blockquote>"
@@ -324,8 +385,10 @@ async def warn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def warns_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
-    reply = update.message.reply_to_message
-    target = reply.from_user if reply and reply.from_user else update.effective_user
+    target, _ = await resolve_target_user(update, context)
+    if not target:
+        u = update.effective_user
+        target = TargetUser(u.id, u.first_name, u.username or "", u)
 
     doc = await warns_col.find_one({"chat_id": chat.id, "user_id": target.id})
     count = doc.get("warns", 0) if doc else 0
@@ -344,12 +407,17 @@ async def rmwarn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_html("⚠️ Only administrators can reset warnings!")
         return
 
-    reply = update.message.reply_to_message
-    if not reply or not reply.from_user:
-        await update.message.reply_html("⚠️ <b>Reply to the user</b> to reset their warnings!")
+    target, _ = await resolve_target_user(update, context)
+    if not target:
+        await update.message.reply_html(
+            "⚠️ <b>Specify the user to reset warnings for!</b>\n"
+            "<i>Reply to their message or provide @username / user ID:</i>\n"
+            "• <code>/rmwarn @username</code>\n"
+            "• <code>/rmwarn 123456789</code>\n"
+            "• <code>/rmwarn</code> (by replying)"
+        )
         return
 
-    target = reply.from_user
     await warns_col.delete_one({"chat_id": chat.id, "user_id": target.id})
     await update.message.reply_html(
         f"✨ <b>ᴡᴀʀɴɪɴɢs ʀᴇsᴇᴛ!</b>\n\n"

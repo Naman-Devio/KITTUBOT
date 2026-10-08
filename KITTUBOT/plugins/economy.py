@@ -149,26 +149,35 @@ async def withdraw_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_html("❌ Transaction failed! Check your bank balance.")
 
 
+from KITTUBOT.core.permissions import resolve_target_user
+
+
 async def give_coins_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    reply = update.message.reply_to_message
+    target, rem_args = await resolve_target_user(update, context)
 
-    if not reply or not reply.from_user or reply.from_user.is_bot:
-        await update.message.reply_html("⚠️ <b>Reply to the user</b> you want to give coins to!")
+    if not target or (target.user and target.user.is_bot):
+        await update.message.reply_html(
+            "⚠️ <b>Specify the user to send coins to!</b>\n"
+            "<i>Reply to their message or provide @username / user ID:</i>\n"
+            "• <code>/give @username [amount]</code>\n"
+            "• <code>/give 123456789 [amount]</code>\n"
+            "• <code>/give [amount]</code> (by replying)"
+        )
         return
 
-    target = reply.from_user
     if target.id == user.id:
         await update.message.reply_html("😂 You cannot give coins to yourself!")
         return
 
-    if not context.args or not context.args[0].isdigit():
-        await update.message.reply_html("⚠️ Specify the amount! Example: <code>/give 500</code>")
-        return
+    amount = None
+    for arg in rem_args:
+        if arg.isdigit():
+            amount = int(arg)
+            break
 
-    amount = int(context.args[0])
-    if amount <= 0:
-        await update.message.reply_html("⚠️ Amount must be greater than zero!")
+    if amount is None or amount <= 0:
+        await update.message.reply_html("⚠️ Specify the amount! Example: <code>/give @username 500</code>")
         return
 
     sender_data = await ensure_user(user)
@@ -176,7 +185,6 @@ async def give_coins_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_html(f"❌ You only have <b>{sender_data.get('balance', 0):,} coins</b>!")
         return
 
-    await ensure_user(target)
     await update_balance(user.id, -amount)
     await update_balance(target.id, amount)
 

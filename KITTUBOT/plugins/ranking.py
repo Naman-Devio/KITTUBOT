@@ -28,6 +28,7 @@ from KITTUBOT.database.rankings import (
     get_user_global_stats,
 )
 from KITTUBOT.database.chats import get_chat, set_chat_setting
+from KITTUBOT.core.permissions import resolve_target_user
 from KITTUBOT import log
 
 __mod_name__ = "Ranking"
@@ -200,9 +201,9 @@ async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     msg = update.effective_message
 
-    target_user = user
-    if msg.reply_to_message and msg.reply_to_message.from_user:
-        target_user = msg.reply_to_message.from_user
+    target_user, _ = await resolve_target_user(update, context)
+    if not target_user:
+        target_user = user
 
     rank, chat_data = await get_user_chat_rank(chat.id, target_user.id)
     global_stats = await get_user_global_stats(target_user.id)
