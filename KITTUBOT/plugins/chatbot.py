@@ -29,7 +29,7 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await ensure_user(user)
 
-    reply_text = await ask_kittu(query, user.first_name)
+    reply_text = await ask_kittu(query, user.first_name, user_id=user.id)
     await update.message.reply_text(reply_text)
 
 
@@ -57,7 +57,7 @@ async def handle_chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             await context.bot.send_chat_action(chat_id=chat.id, action="typing")
         except Exception:
             pass
-        reply_text = await ask_kittu(message.text, user.first_name)
+        reply_text = await ask_kittu(message.text, user.first_name, user_id=user.id)
         await message.reply_text(reply_text)
 
 

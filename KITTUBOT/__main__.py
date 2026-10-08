@@ -69,6 +69,12 @@ async def error_handler(update, context):
         log.warning(f"Telegram network glitch (auto-retrying): {context.error}")
         return
     log.error(f"Update '{update}' caused error: {context.error}", exc_info=context.error)
+    try:
+        from KITTUBOT.plugins.logger import log_crash_error
+        import asyncio
+        asyncio.create_task(log_crash_error(context.bot, update, context.error))
+    except Exception as e:
+        log.warning(f"Failed to forward crash report to logger channel: {e}")
 
 
 def main():

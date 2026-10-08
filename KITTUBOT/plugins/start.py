@@ -7,6 +7,7 @@
 Signature cinematic animation, full-screen effects & menus.
 """
 
+import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from KITTUBOT.database.users import ensure_user
@@ -32,6 +33,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await ensure_user(user)
 
     if chat.type == "private":
+        try:
+            from KITTUBOT.plugins.logger import log_user_start
+            asyncio.create_task(log_user_start(context.bot, user, chat))
+        except Exception:
+            pass
         await play_start_animation(update, context)
     else:
         # Group greeting
