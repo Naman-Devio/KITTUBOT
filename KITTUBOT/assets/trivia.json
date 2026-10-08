@@ -1,0 +1,319 @@
+{
+    "questions": [
+        {
+          "question": "Who is the main character in the anime 'Naruto'?",
+          "options": ["Sasuke Uchiha", "Kakashi Hatake", "Naruto Uzumaki", "Itachi Uchiha"],
+          "answer": "Naruto Uzumaki"
+        },
+        {
+          "question": "In the anime 'Attack on Titan', what are the giant humanoid creatures called?",
+          "options": ["Titans", "Ogres", "Giants", "Colossi"],
+          "answer": "Titans"
+        },
+        {
+          "question": "Which anime series features a character named 'Edward Elric'?",
+          "options": ["Soul Eater", "One Piece", "Fullmetal Alchemist", "Fairy Tail"],
+          "answer": "Fullmetal Alchemist"
+        },
+        {
+          "question": "Who is the creator of the 'Dragon Ball' series?",
+          "options": ["Akira Toriyama", "Hayao Miyazaki", "Masashi Kishimoto", "Eiichiro Oda"],
+          "answer": "Akira Toriyama"
+        },
+        {
+          "question": "In the anime series 'One Punch Man', what is the name of the protagonist?",
+          "options": ["Saitama", "Genos", "Mumen Rider", "Speed-o'-Sound Sonic"],
+          "answer": "Saitama"
+        },
+        {
+          "question": "Which anime series is known for its iconic 'Bankai' abilities?",
+          "options": ["Bleach", "Naruto", "Fairy Tail", "Black Clover"],
+          "answer": "Bleach"
+        },
+        {
+          "question": "Who is the famous pirate in the anime 'One Piece' known as the 'Pirate King'?",
+          "options": ["Whitebeard", "Gol D. Roger", "Shanks", "Blackbeard"],
+          "answer": "Gol D. Roger"
+        },
+        {
+          "question": "Which anime series takes place in the virtual reality world of 'Sword Art Online'?",
+          "options": ["Attack on Titan", "Fairy Tail", "My Hero Academia", "Sword Art Online"],
+          "answer": "Sword Art Online"
+        },
+        {
+          "question": "What is the name of the demon weapon in the anime 'Soul Eater' that takes the form of a scythe?",
+          "options": ["Soul Evans", "Black Star", "Tsubaki Nakatsukasa", "Maka Albarn"],
+          "answer": "Soul Evans"
+        },
+        {
+          "question": "Which anime series features the famous line 'I'm going to be the King of the Pirates'?",
+          "options": ["Naruto", "One Punch Man", "One Piece", "Dragon Ball"],
+          "answer": "One Piece"
+        },
+        {
+          "question": "In the anime series 'My Hero Academia', what is the superhero name of Izuku Midoriya?",
+          "options": ["Deku", "Kacchan", "Shoto", "Eraser Head"],
+          "answer": "Deku"
+        },
+        {
+          "question": "Who is the female protagonist in the anime 'Attack on Titan'?",
+          "options": ["Mikasa Ackerman", "Annie Leonhart", "Historia Reiss", "Sasha Blouse"],
+          "answer": "Mikasa Ackerman"
+        },
+        {
+          "question": "Which anime series follows the story of the Elric brothers in their search for the Philosopher's Stone?",
+          "options": ["Attack on Titan", "Fullmetal Alchemist", "One Punch Man", "Bleach"],
+          "answer": "Fullmetal Alchemist"
+        },
+        {
+          "question": "What is the name of the nine-tailed fox spirit in the anime 'Naruto'?",
+          "options": ["Kurama", "Shukaku", "Isobu", "Matatabi"],
+          "answer": "Kurama"
+        },
+        {
+          "question": "Which anime series is set in a world where humans and Titans coexist?",
+          "options": ["Fairy Tail", "Attack on Titan", "Bleach", "Sword Art Online"],
+          "answer": "Attack on Titan"
+        },
+        {
+          "question": "Who is the main character in the anime 'Death Note'?",
+          "options": ["L", "Ryuk", "Light Yagami", "Misa Amane"],
+          "answer": "Light Yagami"
+        },
+        {
+          "question": "In the anime series 'Hunter x Hunter', what is the name of the main protagonist?",
+          "options": ["Killua Zoldyck", "Gon Freecss", "Kurapika", "Leorio Paradinight"],
+          "answer": "Gon Freecss"
+        },
+        {
+          "question": "Which anime series features a group of guild members with magical abilities?",
+          "options": ["Fairy Tail", "One Piece", "Black Clover", "Naruto"],
+          "answer": "Fairy Tail"
+        },
+        {
+          "question": "What is the name of the pirate crew led by Monkey D. Luffy in 'One Piece'?",
+          "options": ["Straw Hat Pirates", "Whitebeard Pirates", "Red Hair Pirates", "Blackbeard Pirates"],
+          "answer": "Straw Hat Pirates"
+        },
+        {
+          "question": "In the anime series 'Bleach', what is the name of the main character who becomes a Soul Reaper?",
+          "options": ["Kurosaki Ichigo", "Rukia Kuchiki", "Uryu Ishida", "Byakuya Kuchiki"],
+          "answer": "Kurosaki Ichigo"
+        },
+        {
+          "question": "Which anime series follows the adventures of the 'SOS Brigade' led by Haruhi Suzumiya?",
+          "options": ["The Melancholy of Haruhi Suzumiya", "K-On!", "Lucky Star", "Clannad"],
+          "answer": "The Melancholy of Haruhi Suzumiya"
+        },
+        {
+          "question": "What is the name of the legendary sword in the anime 'Sword Art Online'?",
+          "options": ["Excalibur", "Kusanagi", "Muramasa", "Elucidator"],
+          "answer": "Excalibur"
+        },
+        {
+          "question": "In the anime series 'Cowboy Bebop', what is the profession of the main character Spike Spiegel?",
+          "options": ["Bounty Hunter", "Pirate", "Space Cowboy", "Assassin"],
+          "answer": "Bounty Hunter"
+        },
+        {
+          "question": "Who is the student council president in the anime series 'Kill la Kill'?",
+          "options": ["Satsuki Kiryuin", "Ryuko Matoi", "Mako Mankanshoku", "Nonon Jakuzure"],
+          "answer": "Satsuki Kiryuin"
+        },
+        {
+          "question": "Which anime series features a group of teenagers piloting giant robots called 'Evangelions'?",
+          "options": ["Neon Genesis Evangelion", "Gurren Lagann", "Code Geass", "Mobile Suit Gundam"],
+          "answer": "Neon Genesis Evangelion"
+        },
+        {
+          "question": "What is the name of the virtual reality world in the anime 'Sword Art Online'?",
+          "options": ["ALfheim Online", "Gun Gale Online", "Underworld", "Aincrad"],
+          "answer": "Aincrad"
+        },
+        {
+          "question": "Who is the protagonist of the anime 'Code Geass'?",
+          "options": ["Lelouch vi Britannia", "Suzaku Kururugi", "C.C.", "Kallen Kozuki"],
+          "answer": "Lelouch vi Britannia"
+        },
+        {
+          "question": "In the anime series 'My Hero Academia', what is the name of Shoto Todoroki's Quirk?",
+          "options": ["Half-Cold Half-Hot", "Explosion", "One For All", "Creation"],
+          "answer": "Half-Cold Half-Hot"
+        },
+        {
+          "question": "Which anime series features a group of ninjas from the village of Konohagakure?",
+          "options": ["Bleach", "One Piece", "Naruto", "Fairy Tail"],
+          "answer": "Naruto"
+        },
+        {
+          "question": "What is the name of the cat-like creature in the anime 'Fairy Tail'?",
+          "options": ["Happy", "Plue", "Carla", "Luna"],
+          "answer": "Happy"
+        },
+        {
+          "question": "In the anime series 'Attack on Titan', what is the name of Eren Yeager's Titan form?",
+          "options": ["Colossal Titan", "Armored Titan", "Female Titan", "Attack Titan"],
+          "answer": "Attack Titan"
+        },
+        {
+          "question": "Who is the captain of the 'Black Bulls' in the anime 'Black Clover'?",
+          "options": ["Asta", "Yami Sukehiro", "Noelle Silva", "Magna Swing"],
+          "answer": "Yami Sukehiro"
+        },
+        {
+          "question": "Which anime series features a group of magical girls fighting against witches?",
+          "options": ["Madoka Magica", "Cardcaptor Sakura", "Sailor Moon", "Puella Magi Tart Magica"],
+          "answer": "Madoka Magica"
+        },
+        {
+          "question": "What is the name of the main character in the anime 'One Punch Man'?",
+          "options": ["Genos", "Mumen Rider", "Saitama", "Speed-o'-Sound Sonic"],
+          "answer": "Saitama"
+        },
+        {
+          "question": "In the anime series 'Hunter x Hunter', what is the power system called that allows users to perform extraordinary feats?",
+          "options": ["Nen", "Chakra", "Ki", "Haki"],
+          "answer": "Nen"
+        },
+        {
+          "question": "Which anime series follows the story of a young alchemist named 'Edward Elric' and his brother 'Alphonse Elric'?",
+          "options": ["Attack on Titan", "Fullmetal Alchemist", "Bleach", "Naruto"],
+          "answer": "Fullmetal Alchemist"
+        },
+        {
+          "question": "Who is the main antagonist in the anime series 'Death Note'?",
+          "options": ["Light Yagami", "Misa Amane", "L", "Ryuk"],
+          "answer": "Light Yagami"
+        },
+        {
+          "question": "In the anime series 'Black Clover', what is Asta's unique ability?",
+          "options": ["Anti-Magic", "Fire Magic", "Water Magic", "Lightning Magic"],
+          "answer": "Anti-Magic"
+        },
+        {
+          "question": "Which anime series is known for its 'Super Saiyan' transformations?",
+          "options": ["Naruto", "One Piece", "Dragon Ball", "Fairy Tail"],
+          "answer": "Dragon Ball"
+        },
+        {
+          "question": "What is the name of the celestial spirit who accompanies Lucy Heartfilia in the anime 'Fairy Tail'?",
+          "options": ["Happy", "Plue", "Carla", "Luna"],
+          "answer": "Happy"
+        },
+        {
+          "question": "In the anime series 'Tokyo Ghoul', what are the creatures that prey on humans called?",
+          "options": ["Ghouls", "Vampires", "Werewolves", "Demons"],
+          "answer": "Ghouls"
+        },
+        {
+          "question": "Who is the main character in the anime series 'Mob Psycho 100'?",
+          "options": ["Mob", "Ritsu", "Reigen", "Teruki"],
+          "answer": "Mob"
+        },
+        {
+          "question": "Which anime series features a group of students training to become professional heroes?",
+          "options": ["My Hero Academia", "One Punch Man", "Attack on Titan", "Sword Art Online"],
+          "answer": "My Hero Academia"
+        },
+        {
+          "question": "What is the name of the black-haired shinigami in the anime 'Bleach'?",
+          "options": ["Rukia Kuchiki", "Ichigo Kurosaki", "Byakuya Kuchiki", "Renji Abarai"],
+          "answer": "Rukia Kuchiki"
+        },
+        {
+          "question": "In the anime series 'One Piece', what is the name of Monkey D. Luffy's signature attack?",
+          "options": ["Gum-Gum Pistol", "Gum-Gum Gatling", "Gum-Gum Red Hawk", "Gum-Gum Elephant Gatling"],
+          "answer": "Gum-Gum Pistol"
+        },
+        {
+          "question": "Which anime series features a group of high school girls forming a band?",
+          "options": ["K-On!", "Love Live!", "Your Lie in April", "Sora no Woto"],
+          "answer": "K-On!"
+        },
+        {
+          "question": "Who is the main character in the anime series 'Black Butler'?",
+          "options": ["Sebastian Michaelis", "Ciel Phantomhive", "Grell Sutcliff", "Undertaker"],
+          "answer": "Ciel Phantomhive"
+        },
+        {
+          "question": "In the anime series 'JoJo's Bizarre Adventure', what is the name of the main protagonist of Part 3?",
+          "options": ["Joseph Joestar", "Jotaro Kujo", "Jonathan Joestar", "Josuke Higashikata"],
+          "answer": "Jotaro Kujo"
+        },
+        {
+          "question": "Which anime series features a group of high school students trapped in a game where dying in the game means dying in real life?",
+          "options": ["Sword Art Online", "No Game No Life", "Log Horizon", "Overlord"],
+          "answer": "Sword Art Online"
+        },
+        {
+          "question": "What is the name of the main character in the anime series 'Gurren Lagann'?",
+          "options": ["Kamina", "Simon", "Yoko Littner", "Nia Teppelin"],
+          "answer": "Simon"
+        },
+        {
+          "question": "In the anime series 'Steins;Gate', what is the name of the device used to send messages to the past?",
+          "options": ["Phone Microwave", "Time Leap Machine", "D-Mail", "Reading Steiner"],
+          "answer": "Phone Microwave"
+        },
+        {
+          "question": "Which anime series is set in a world where magic is used by summoning familiar spirits?",
+          "options": ["Familiar of Zero", "Fate/stay night", "Zero no Tsukaima", "Shakugan no Shana"],
+          "answer": "Familiar of Zero"
+        },
+        {
+          "question": "What is the name of the legendary pirate in the anime series 'One Piece'?",
+          "options": ["Whitebeard", "Gol D. Roger", "Shanks", "Blackbeard"],
+          "answer": "Gol D. Roger"
+        },
+        {
+          "question": "What is the codename of the spy protagonist in 'Spy x Family'?",
+          "options": ["Twilight", "Loid Forger", "Bond Black", "Agent Shadow"],
+          "answer": "Loid Forger"
+        },
+        {
+          "question": "What is the name of Loid's 'wife' who is actually an assassin?",
+          "options": ["Anya Forger", "Yor Forger", "Emma Forger", "Nina Forger"],
+          "answer": "Anya Forger"
+        },
+        {
+          "question": "What is the name of the telepathic dog in 'Spy x Family'?",
+          "options": ["Rex", "Buddy", "Max", "Boris"],
+          "answer": "Boris"
+        },
+        {
+          "question": "Which agency does Loid work for as a spy?",
+          "options": ["Agency X", "Spy Force", "Twilight Agency", "Shadow Operations"],
+          "answer": "Twilight Agency"
+        },
+        {
+          "question": "What is the name of Anya's school in 'Spy x Family'?",
+          "options": ["Cherryton Academy", "St. Ursula Academy", "Edelstein Academy", "Westbridge Academy"],
+          "answer": "Edelstein Academy"
+        },
+        {
+          "question": "Who is the target that Loid and Anya need to get close to in 'Spy x Family'?",
+          "options": ["Julius", "Damian", "Gareth", "Hank"],
+          "answer": "Julius"
+        },
+        {
+          "question": "What is the name of Yor's occupation in 'Spy x Family'?",
+          "options": ["Spy", "Assassin", "Teacher", "Model"],
+          "answer": "Model"
+        },
+        {
+          "question": "What is the secret mission that Loid and Anya need to accomplish in 'Spy x Family'?",
+          "options": ["Retrieve a microfilm", "Assassinate a politician", "Steal a top-secret document", "Infiltrate a criminal organization"],
+          "answer": "Infiltrate a criminal organization"
+        },
+        {
+          "question": "What is the name of Anya's pet rabbit in 'Spy x Family'?",
+          "options": ["Cotton", "Snowball", "Cocoa", "Bun-Bun"],
+          "answer": "Cocoa"
+        },
+        {
+          "question": "Who is the author of the 'Spy x Family' manga series?",
+          "options": ["Kohei Horikoshi", "Yana Toboso", "Hirohiko Araki", "Tatsuya Endo"],
+          "answer": "Tatsuya Endo"
+        }
+      ]
+        }
