@@ -234,15 +234,19 @@ async def ranking_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📊 Group Top 10", callback_data="rank_view_group"),
-            InlineKeyboardButton("🌐 Global Top 10", callback_data="rank_view_global"),
+            InlineKeyboardButton("📊 Group Top 10", callback_data=f"rank_view_group_{target_user.id}"),
+            InlineKeyboardButton("🌐 Global Top 10", callback_data=f"rank_view_global_{target_user.id}"),
         ],
         [
             InlineKeyboardButton("⚡ Start Challenge", callback_data="rank_spawn_challenge"),
+            InlineKeyboardButton("❌ ᴄʟᴏsᴇ", callback_data="close_menu"),
         ]
     ])
 
-    await msg.reply_html(card_text, reply_markup=keyboard)
+    sent = await msg.reply_html(card_text, reply_markup=keyboard)
+    from KITTUBOT.core.cleaner import track_menu
+    if chat and chat.type not in ["private", "channel"]:
+        await track_menu(context, chat.id, sent.message_id, auto_delete_seconds=180, is_group=True)
 
 
 async def grouprank_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -335,6 +339,8 @@ async def autochallenge_toggle_command(update: Update, context: ContextTypes.DEF
     await msg.reply_html(f"⚡ <b>Auto Speed-Typing Challenges {status_str}!</b>")
 
 
+from KITTUBOT.core.cleaner import touch_menu
+
 async def ranking_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles inline buttons on ranking cards."""
     query = update.callback_query
@@ -342,23 +348,101 @@ async def ranking_callback_handler(update: Update, context: ContextTypes.DEFAULT
     data = query.data
     chat = update.effective_chat
 
-    if data == "rank_view_group":
+    if data.startswith("rank_view_group"):
+        uid = data.split("_")[-1] if "_" in data else "0"
         top_members = await get_group_leaderboard(chat.id, limit=10)
         if not top_members:
-            await query.message.reply_html("📊 No rankings recorded yet in this group!")
-            return
-        medals = ["🥇", "🥈", "🥉", "4.", "5.", "6.", "7.", "8.", "9.", "10."]
-        lines = [f"{medals[i]} <b>{m.get('first_name', 'User')}</b> — <code>{m.get('points', 0):,} XP</code>" for i, m in enumerate(top_members)]
-        await query.message.reply_html(f"🏆 <b>ɢʀᴏᴜᴘ ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ</b>\n\n<blockquote>{chr(10).join(lines)}</blockquote>")
+            body = "<i>No rankings recorded yet in this group!</i>"
+        else:
+            medals = ["🥇", "🥈", "🥉", "4.", "5.", "6.", "7.", "8.", "9.", "10."]
+            lines = [f"{medals[i]} <b>{m.get('first_name', 'User')}</b> — <code>{m.get('points', 0):,} XP</code>" for i, m in enumerate(top_members)]
+            body = chr(10).join(lines)
+        
+        kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🔙 ʙᴀᴄᴋ", callback_data=f"rank_back_{uid}"),
+                InlineKeyboardButton("❌ ᴄʟᴏsᴇ", callback_data="close_menu"),
+            ]
+        ])
+        text = f"🏆 <b>ɢʀᴏᴜᴘ ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ</b> — <b>{chat.title}</b>\n\n<blockquote>{body}</blockquote>"
+        try:
+            await query.edit_message_text(text=text, parse_mode="HTML", reply_markup=kb)
+            if chat:
+                touch_menu(context, chat.id)
+        except Exception:
+            pass
 
-    elif data == "rank_view_global":
+    elif data.startswith("rank_view_global"):
+        uid = data.split("_")[-1] if "_" in data else "0"
         top_global = await get_global_leaderboard(limit=10)
         if not top_global:
-            await query.message.reply_html("📊 No global rankings yet!")
-            return
-        medals = ["🥇", "🥈", "🥉", "4.", "5.", "6.", "7.", "8.", "9.", "10."]
-        lines = [f"{medals[i]} <b>{m.get('first_name', 'Player')}</b> — <code>{m.get('total_points', 0):,} XP</code>" for i, m in enumerate(top_global)]
-        await query.message.reply_html(f"🌐 <b>ɢʟᴏʙᴀʟ ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ</b>\n\n<blockquote>{chr(10).join(lines)}</blockquote>")
+            body = "<i>No global rankings recorded yet!</i>"
+        else:
+            medals = ["🥇", "🥈", "🥉", "4.", "5.", "6.", "7.", "8.", "9.", "10."]
+            lines = [f"{medals[i]} <b>{m.get('first_name', 'Player')}</b> — <code>{m.get('total_points', 0):,} XP</code>" for i, m in enumerate(top_global)]
+            body = chr(10).join(lines)
+
+        kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🔙 ʙᴀᴄᴋ", callback_data=f"rank_back_{uid}"),
+                InlineKeyboardButton("❌ ᴄʟᴏsᴇ", callback_data="close_menu"),
+            ]
+        ])
+        text = f"🌐 <b>ɢʟᴏʙᴀʟ ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ</b>\n\n<blockquote>{body}</blockquote>"
+        try:
+            await query.edit_message_text(text=text, parse_mode="HTML", reply_markup=kb)
+            if chat:
+                touch_menu(context, chat.id)
+        except Exception:
+            pass
+
+    elif data.startswith("rank_back_"):
+        target_uid = int(data.split("_")[2])
+        # Re-fetch user rank and display
+        user_stats = await get_user_chat_rank(chat.id, target_uid)
+        g_stats = await get_user_global_stats(target_uid)
+
+        points = user_stats.get("points", 0)
+        messages = user_stats.get("messages", 0)
+        wins = user_stats.get("typing_wins", 0)
+        tier = get_user_tier(points)
+        rank_pos = user_stats.get("rank")
+        rank_str = f"#{rank_pos}" if rank_pos else "Unranked"
+
+        g_points = g_stats.get("total_points", 0)
+        g_msgs = g_stats.get("total_messages", 0)
+        g_wins = g_stats.get("total_typing_wins", 0)
+
+        card_text = (
+            f"🏆 <b>ᴋɪᴛᴛᴜ ᴄʜᴀᴛ ʀᴀɴᴋɪɴɢ sᴛᴀᴛᴜs</b> 🎌\n\n"
+            f"<blockquote>👤 <b>ᴜsᴇʀ :</b> {query.from_user.mention_html()}\n"
+            f"🎖️ <b>ᴛɪᴇʀ :</b> {tier}\n"
+            f"📊 <b>ɢʀᴏᴜᴘ ʀᴀɴᴋ :</b> <code>{rank_str}</code>\n"
+            f"✨ <b>ɢʀᴏᴜᴘ xᴘ :</b> <code>{points:,} Points</code>\n"
+            f"💬 <b>ᴍᴇssᴀɢᴇs :</b> <code>{messages:,}</code>\n"
+            f"⚡ <b>ᴛʏᴘɪɴɢ ᴡɪɴs :</b> <code>{wins}</code></blockquote>\n\n"
+            f"<blockquote>🌐 <b>ɢʟᴏʙᴀʟ sᴛᴀᴛs:</b>\n"
+            f"• ᴛᴏᴛᴀʟ xᴘ: <code>{g_points:,}</code>\n"
+            f"• ᴛᴏᴛᴀʟ ᴍsɢs: <code>{g_msgs:,}</code>\n"
+            f"• ɢʟᴏʙᴀʟ ᴡɪɴs: <code>{g_wins}</code></blockquote>\n\n"
+            "🎋 <i>Keep chatting and winning challenges to level up!</i>"
+        )
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📊 Group Top 10", callback_data=f"rank_view_group_{target_uid}"),
+                InlineKeyboardButton("🌐 Global Top 10", callback_data=f"rank_view_global_{target_uid}"),
+            ],
+            [
+                InlineKeyboardButton("⚡ Start Challenge", callback_data="rank_spawn_challenge"),
+                InlineKeyboardButton("❌ ᴄʟᴏsᴇ", callback_data="close_menu"),
+            ]
+        ])
+        try:
+            await query.edit_message_text(text=card_text, parse_mode="HTML", reply_markup=keyboard)
+            if chat:
+                touch_menu(context, chat.id)
+        except Exception:
+            pass
 
     elif data == "rank_spawn_challenge":
         await challenge_command(update, context)

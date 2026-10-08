@@ -157,9 +157,41 @@ class WordSeekGame:
         self.created_at = time.time()
         self.used_letters: dict[str, str] = {}  # char -> best emoji
         self.solved = False
+        self.board_message_id = None
+        self.timeout_task = None
 
 
 ACTIVE_WORDSEEK_GAMES: dict[int, WordSeekGame] = {}
+
+
+async def wordseek_inactivity_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    """Auto-ends abandoned WordSeek game after 120s of inactivity to keep chat clean."""
+    try:
+        await asyncio.sleep(120)
+        if chat_id in ACTIVE_WORDSEEK_GAMES:
+            game = ACTIVE_WORDSEEK_GAMES.pop(chat_id)
+            end_text = (
+                "⌛ <b>ᴡᴏʀᴅsᴇᴇᴋ ᴇxᴘɪʀᴇᴅ (ɪɴᴀᴄᴛɪᴠɪᴛʏ)</b>\n\n"
+                f"<blockquote>Game auto-closed due to 2 minutes of no guesses.\n"
+                f"The secret word was: <b>{game.target.upper()}</b></blockquote>\n\n"
+                "🎋 <i>Type /wordseek to play a new game!</i>"
+            )
+            if game.board_message_id:
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=game.board_message_id,
+                        text=end_text,
+                        parse_mode="HTML",
+                    )
+                    return
+                except Exception:
+                    pass
+            await context.bot.send_message(chat_id=chat_id, text=end_text, parse_mode="HTML")
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        log.debug(f"WordSeek timeout task exception: {e}")
 
 
 def get_game_keyboard() -> InlineKeyboardMarkup:
@@ -168,6 +200,9 @@ def get_game_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("💡 Smart Hint", callback_data="ws_hint"),
             InlineKeyboardButton("📜 Rules", callback_data="ws_rules"),
             InlineKeyboardButton("🛑 Forfeit", callback_data="ws_stop"),
+        ],
+        [
+            InlineKeyboardButton("❌ ᴄʟᴏsᴇ", callback_data="close_menu"),
         ]
     ])
 
@@ -231,7 +266,9 @@ async def start_wordseek_command(update: Update, context: ContextTypes.DEFAULT_T
     ACTIVE_WORDSEEK_GAMES[chat.id] = game
 
     board_text = render_board(game)
-    await msg.reply_html(board_text, reply_markup=get_game_keyboard())
+    sent = await msg.reply_html(board_text, reply_markup=get_game_keyboard())
+    game.board_message_id = sent.message_id
+    game.timeout_task = asyncio.create_task(wordseek_inactivity_timeout(context, chat.id))
 
 
 async def wsdaily_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -260,7 +297,9 @@ async def wsdaily_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ACTIVE_WORDSEEK_GAMES[chat.id] = game
 
     board_text = render_board(game)
-    await msg.reply_html(board_text, reply_markup=get_game_keyboard())
+    sent = await msg.reply_html(board_text, reply_markup=get_game_keyboard())
+    game.board_message_id = sent.message_id
+    game.timeout_task = asyncio.create_task(wordseek_inactivity_timeout(context, chat.id))
 
 
 async def stop_ws_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -268,6 +307,8 @@ async def stop_ws_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
     if chat.id in ACTIVE_WORDSEEK_GAMES:
         game = ACTIVE_WORDSEEK_GAMES.pop(chat.id)
+        if game.timeout_task:
+            game.timeout_task.cancel()
         await msg.reply_html(
             f"🛑 <b>ᴡᴏʀᴅsᴇᴇᴋ ᴄᴀɴᴄᴇʟʟᴇᴅ!</b>\n\n"
             f"<blockquote>The secret word was: <b>{game.target.upper()}</b></blockquote>"
@@ -315,6 +356,8 @@ async def wordseek_callback_handler(update: Update, context: ContextTypes.DEFAUL
         await query.message.reply_html(hint_text)
     elif data == "ws_stop":
         del ACTIVE_WORDSEEK_GAMES[chat_id]
+        if game.timeout_task:
+            game.timeout_task.cancel()
         await query.message.reply_html(
             f"🛑 <b>ɢᴀᴍᴇ ғᴏʀғᴇɪᴛᴇᴅ!</b>\n\n"
             f"<blockquote>The hidden word was: <b>{game.target.upper()}</b></blockquote>"
@@ -348,6 +391,11 @@ async def wordseek_guess_listener(update: Update, context: ContextTypes.DEFAULT_
     pattern = evaluate_guess(text, game.target)
     game.guesses.append((text, pattern))
 
+    # Reset inactivity timer on each valid guess
+    if game.timeout_task:
+        game.timeout_task.cancel()
+    game.timeout_task = asyncio.create_task(wordseek_inactivity_timeout(context, chat.id))
+
     # Update keyboard tracker
     for ch, p in zip(text, pattern):
         curr = game.used_letters.get(ch, "")
@@ -358,6 +406,8 @@ async def wordseek_guess_listener(update: Update, context: ContextTypes.DEFAULT_
     if text == game.target:
         game.solved = True
         del ACTIVE_WORDSEEK_GAMES[chat.id]
+        if game.timeout_task:
+            game.timeout_task.cancel()
 
         attempts_left = game.max_attempts - len(game.guesses)
         rewards = {5: 600, 4: 500, 3: 400, 2: 300, 1: 200, 0: 100}
@@ -367,31 +417,70 @@ async def wordseek_guess_listener(update: Update, context: ContextTypes.DEFAULT_
         await update_balance(user.id, bounty)
 
         board_text = render_board(game)
-        await message.reply_html(
+        win_msg = (
             f"{board_text}\n\n"
             f"🎉 <b>ᴡᴏʀᴅsᴇᴇᴋ sᴏʟᴠᴇᴅ!</b> 🏆✨\n\n"
             f"<blockquote>👑 {user.mention_html()} guessed the word <b>{game.target.upper()}</b> in <b>{len(game.guesses)} attempts</b>!\n"
             f"💰 <b>Bounty Won:</b> <code>+{bounty:,} Coins</code>! 🪙</blockquote>\n\n"
             "🎋 <i>Type /wordseek to play another round!</i>"
         )
+        if game.board_message_id:
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=chat.id,
+                    message_id=game.board_message_id,
+                    text=win_msg,
+                    parse_mode="HTML",
+                )
+                return
+            except Exception:
+                pass
+        await message.reply_html(win_msg)
         return
 
     # Check LOSS (6 attempts finished)
     if len(game.guesses) >= game.max_attempts:
         del ACTIVE_WORDSEEK_GAMES[chat.id]
+        if game.timeout_task:
+            game.timeout_task.cancel()
         board_text = render_board(game)
-        await message.reply_html(
+        loss_msg = (
             f"{board_text}\n\n"
             f"💀 <b>ɢᴀᴍᴇ ᴏᴠᴇʀ! ᴏᴜᴛ ᴏғ ᴀᴛᴛᴇᴍᴘᴛs!</b>\n\n"
             f"<blockquote>The secret word was: <b>{game.target.upper()}</b>\n"
             f"Better luck next time!</blockquote>\n\n"
             "🎋 <i>Type /wordseek to try again!</i>"
         )
+        if game.board_message_id:
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=chat.id,
+                    message_id=game.board_message_id,
+                    text=loss_msg,
+                    parse_mode="HTML",
+                )
+                return
+            except Exception:
+                pass
+        await message.reply_html(loss_msg)
         return
 
-    # Show updated board with buttons
+    # Show updated board in-place with buttons
     board_text = render_board(game)
-    await message.reply_html(board_text, reply_markup=get_game_keyboard())
+    if game.board_message_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat.id,
+                message_id=game.board_message_id,
+                text=board_text,
+                parse_mode="HTML",
+                reply_markup=get_game_keyboard(),
+            )
+            return
+        except Exception:
+            pass
+    sent = await message.reply_html(board_text, reply_markup=get_game_keyboard())
+    game.board_message_id = sent.message_id
 
 
 def register_handlers(app: Application):

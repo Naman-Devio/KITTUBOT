@@ -29,7 +29,10 @@ def render_stat_bar(buff: float) -> str:
     return "█" * filled + "░" * (10 - filled)
 
 
+from KITTUBOT.core.cleaner import track_menu, touch_menu
+
 async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
     text = "🛒 <b>ᴋɪᴛᴛᴜ ᴀʀᴍᴏʀʏ & ʙʟᴀᴄᴋ ᴍᴀʀᴋᴇᴛ</b> ✨\n\n"
 
     buttons = []
@@ -50,11 +53,14 @@ async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text += "🎋 <i>Tap an item button below to purchase instantly, or use <code>/buy &lt;id&gt;</code>!</i>"
 
-    # Pair buttons 2 per row
+    # Pair buttons 2 per row and append universal Close button
     rows = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
+    rows.append([InlineKeyboardButton("❌ ᴄʟᴏsᴇ", callback_data="close_menu")])
     keyboard = InlineKeyboardMarkup(rows)
 
-    await update.message.reply_html(text, reply_markup=keyboard)
+    sent = await update.message.reply_html(text, reply_markup=keyboard)
+    if chat and chat.type != "private":
+        await track_menu(context, chat.id, sent.message_id, auto_delete_seconds=180, is_group=True)
 
 
 async def buy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

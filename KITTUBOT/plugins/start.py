@@ -78,13 +78,10 @@ async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         pass
 
 
+from KITTUBOT.core.cleaner import close_menu_handler
+
 async def close_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    try:
-        await query.answer("Closed!")
-        await query.message.delete()
-    except Exception:
-        pass
+    await close_menu_handler(update, context)
 
 
 async def noop_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

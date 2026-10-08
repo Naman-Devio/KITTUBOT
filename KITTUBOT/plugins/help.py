@@ -20,12 +20,15 @@ __help__ = """
 """
 
 
+from KITTUBOT.core.cleaner import track_menu, touch_menu
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     module_names = sorted(HELP_MODULES.keys())
     keyboard = get_paginated_help_keyboard(module_names, page=1)
+    chat = update.effective_chat
 
     text = (
-        "⊚ <b>ᴋɪᴛᴛᴜ ʙᴏᴛ — ᴄᴏᴍᴍᴀɴᴅ & ғᴇᴀᴛᴜʀᴇ ᴅɪʀᴇᴄᴛᴏʀʏ</b> ✨\n\n"
+        "⊚ <b>ᴋɪᴛᴛᴜ ʙᴏᴛ — ᴄᴏᴍᴍᴀɴᴅ & ғᴇᴀᴛᴜʀᴇ ᴅɪʀᴇᴄᴛᴏʀY</b> ✨\n\n"
         "<blockquote>ᴄʟɪᴄᴋ ᴀɴʏ ᴄᴀᴛᴇɢᴏʀʏ ʙᴜᴛᴛᴏɴ ʙᴇʟᴏᴡ ᴛᴏ ᴠɪᴇᴡ ᴀʟʟ ᴀᴠᴀɪʟᴀʙʟᴇ ᴄᴏᴍᴍᴀɴᴅs.\n"
         "ᴜsᴇ ᴛʜᴇ ᴀʀʀᴏᴡ ʙᴜᴛᴛᴏɴs ᴛᴏ ɴᴀᴠɪɢᴀᴛᴇ ᴘᴀɢᴇs!</blockquote>"
     )
@@ -35,8 +38,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
         await update.callback_query.edit_message_text(text=text, parse_mode="HTML", reply_markup=keyboard)
+        if chat:
+            touch_menu(context, chat.id)
     else:
-        await update.message.reply_html(text=text, reply_markup=keyboard)
+        sent = await update.message.reply_html(text=text, reply_markup=keyboard)
+        if chat and chat.type != "private":
+            await track_menu(context, chat.id, sent.message_id, auto_delete_seconds=180, is_group=True)
 
 
 async def help_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -52,6 +59,8 @@ async def help_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     try:
         await query.edit_message_reply_markup(reply_markup=keyboard)
+        if update.effective_chat:
+            touch_menu(context, update.effective_chat.id)
     except Exception:
         pass
 
@@ -71,7 +80,10 @@ async def help_module_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     mod_help = HELP_MODULES.get(found_key, "No instructions available.")
     
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔙 ʙᴀᴄᴋ", callback_data=f"helppage_{return_page}")]
+        [
+            InlineKeyboardButton("🔙 ʙᴀᴄᴋ", callback_data=f"helppage_{return_page}"),
+            InlineKeyboardButton("❌ ᴄʟᴏsᴇ", callback_data="close_menu"),
+        ]
     ])
 
     title = format_category_name(found_key)
@@ -86,6 +98,8 @@ async def help_module_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             parse_mode="HTML",
             reply_markup=keyboard,
         )
+        if update.effective_chat:
+            touch_menu(context, update.effective_chat.id)
     except Exception:
         pass
 

@@ -179,8 +179,11 @@ def check_and_clear_stale_game(chat_id: int) -> bool:
     return False
 
 
+from KITTUBOT.core.cleaner import track_menu, touch_menu
+
 async def words_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Word games launcher menu."""
+    chat = update.effective_chat
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🔗 ᴡᴏʀᴅ ᴄʜᴀɪɴ", callback_data="wg_start_chain"),
@@ -209,8 +212,12 @@ async def words_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         except Exception:
             pass
         await update.callback_query.edit_message_text(text=text, parse_mode="HTML", reply_markup=keyboard)
+        if chat:
+            touch_menu(context, chat.id)
     else:
-        await update.message.reply_html(text=text, reply_markup=keyboard)
+        sent = await update.message.reply_html(text=text, reply_markup=keyboard)
+        if chat and chat.type != "private":
+            await track_menu(context, chat.id, sent.message_id, auto_delete_seconds=180, is_group=True)
 
 
 async def start_word_chain(update: Update, context: ContextTypes.DEFAULT_TYPE):

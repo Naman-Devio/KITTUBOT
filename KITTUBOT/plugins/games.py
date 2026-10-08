@@ -10,7 +10,7 @@ Multiplayer Combat RPG, Robbery, Hot Potato Bomb & Group Warfare.
 import random
 import time
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from KITTUBOT.config import config
 from KITTUBOT.database.users import (
     ensure_user,
@@ -221,22 +221,131 @@ async def revive_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from KITTUBOT.core.cleaner import track_menu, touch_menu
+
+
+def get_games_hub_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("⚔️ ᴄᴏᴍʙᴀᴛ ʀᴘɢ", callback_data="gm_combat"),
+            InlineKeyboardButton("🃏 ᴜɴᴏ & ʙᴏᴍʙ", callback_data="gm_cards"),
+        ],
+        [
+            InlineKeyboardButton("🎰 ᴄᴀsɪɴᴏ ʜᴜʙ", callback_data="gm_casino"),
+            InlineKeyboardButton("🔤 ᴡᴏʀᴅ ɢᴀᴍᴇs", callback_data="gm_words"),
+        ],
+        [
+            InlineKeyboardButton("🛒 ᴀʀᴍᴏʀʏ sʜᴏᴘ", callback_data="gm_shop"),
+            InlineKeyboardButton("❌ ᴄʟᴏsᴇ", callback_data="close_menu"),
+        ]
+    ])
+
+
 async def games_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_html(
-        "🎮 <b>ᴋɪᴛᴛᴜ ʙᴏᴛ — ɢᴀᴍᴇs & ᴇɴᴛᴇʀᴛᴀɪɴᴍᴇɴᴛ ʜᴜʙ</b>\n\n"
-        "<blockquote>⚔️ <b>ᴄᴏᴍʙᴀᴛ ʀᴘɢ:</b>\n"
-        "• <code>/kill</code> - Eliminate group members & collect bounties\n"
-        "• <code>/rob</code> - Heist coins from members\n"
-        "• <code>/protect</code> - Buy shields against assassination\n"
-        "• <code>/revive</code> - Bring fallen players back to life\n"
-        "• <code>/shop</code> - Buy weapons & cyber armor\n\n"
-        "🃏 <b>ᴍᴜʟᴛɪᴘʟᴀʏᴇʀ ᴛᴀʙʟᴇ ɢᴀᴍᴇs:</b>\n"
-        "• <code>/uno [bet]</code> - Multiplayer UNO cards with @unocards stickers\n"
-        "• <code>/bomb [bet]</code> - Hot Potato Bomb knockout\n"
-        "• <code>/words</code> - Word chain, unscramble, emoji guess, hangman & quiz\n"
-        "• <code>/riddle</code> - Brain-teaser quizzes with coin prizes</blockquote>\n\n"
+    chat = update.effective_chat
+    text = (
+        "🎮 <b>ᴋɪᴛᴛᴜ ʙᴏᴛ — ɢᴀᴍᴇs & ᴇɴᴛᴇʀᴛᴀɪɴᴍᴇɴᴛ ʜᴜʙ</b> ✨\n\n"
+        "<blockquote>ᴛᴀᴘ ᴀ ᴄᴀᴛᴇɢᴏʀʏ ʙᴇʟᴏᴡ ᴛᴏ ᴇxᴘʟᴏʀᴇ ʀᴜʟᴇs & ᴄᴏᴍᴍᴀɴᴅs:\n\n"
+        "• ⚔️ <b>ᴄᴏᴍʙᴀᴛ ʀᴘɢ :</b> Assassinate, rob, shield & revive\n"
+        "• 🃏 <b>ᴛᴀʙʟᴇ ɢᴀᴍᴇs :</b> Multiplayer UNO cards & Hot Potato Bomb\n"
+        "• 🎰 <b>ᴄᴀsɪɴᴏ :</b> Blackjack, dice rolls, coinflip & slots\n"
+        "• 🔤 <b>ᴡᴏʀᴅ ɢᴀᴍᴇs :</b> WordSeek, hangman, word chain & riddles\n"
+        "• 🛒 <b>ᴀʀᴍᴏʀʏ :</b> High-tech weapons & cyber shields</blockquote>\n\n"
         "🎋 <i>Challenge your friends and build your empire!</i>"
     )
+    keyboard = get_games_hub_keyboard()
+
+    if update.callback_query:
+        query = update.callback_query
+        try:
+            await query.answer()
+            await query.edit_message_text(text=text, parse_mode="HTML", reply_markup=keyboard)
+            if chat:
+                touch_menu(context, chat.id)
+        except Exception:
+            pass
+    else:
+        sent = await update.message.reply_html(text, reply_markup=keyboard)
+        if chat and chat.type != "private":
+            await track_menu(context, chat.id, sent.message_id, auto_delete_seconds=180, is_group=True)
+
+
+async def games_hub_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    chat = update.effective_chat
+
+    try:
+        await query.answer()
+    except Exception:
+        pass
+
+    back_btn = [
+        [
+            InlineKeyboardButton("🔙 ɢᴀᴍᴇs ᴍᴇɴᴜ", callback_data="gm_home"),
+            InlineKeyboardButton("❌ ᴄʟᴏsᴇ", callback_data="close_menu"),
+        ]
+    ]
+
+    if data == "gm_home":
+        await games_menu(update, context)
+        return
+
+    elif data == "gm_combat":
+        text = (
+            "⚔️ <b>ᴄᴏᴍʙᴀᴛ ʀᴘɢ ᴀʀᴇɴᴀ</b>\n\n"
+            "<blockquote>• <code>/kill</code> (reply) - Assassinate a player for bounty\n"
+            "• <code>/rob</code> (reply) - Steal virtual coins from a player\n"
+            "• <code>/protect [1|2]</code> - Buy 1h/2h invulnerability shield\n"
+            "• <code>/revive</code> - Resurrect yourself or a fallen friend\n"
+            "• <code>/shop</code> - Buy weapons & armor buffs</blockquote>\n\n"
+            "🎋 <i>Weapons increase kill success, cyber armor blocks attacks!</i>"
+        )
+    elif data == "gm_cards":
+        text = (
+            "🃏 <b>ᴍᴜʟᴛɪᴘʟᴀʏᴇʀ ᴛᴀʙʟᴇ ɢᴀᴍᴇs</b>\n\n"
+            "<blockquote>• <code>/uno [bet]</code> - Multiplayer UNO with official @unocards stickers!\n"
+            "• <code>/unodeck &lt;theme&gt;</code> - Switch card visual pack (classic, minimal, etc.)\n"
+            "• <code>/enduno</code> - Host can cancel and refund active UNO match\n"
+            "• <code>/bomb [bet]</code> - Hot Potato Bomb match! Pass before fuse explodes!</blockquote>\n\n"
+            "🎋 <i>Auto-ends games with full refunds if players go AFK.</i>"
+        )
+    elif data == "gm_casino":
+        text = (
+            "🎰 <b>ʜɪɢʜ-sᴛᴀᴋᴇs ᴄᴀsɪɴᴏ ʜᴜʙ</b>\n\n"
+            "<blockquote>• <code>/blackjack [bet]</code> - 21 Card game vs Dealer (2.5x)\n"
+            "• <code>/dice [bet]</code> - Roll Telegram physics dice (up to 2.5x)\n"
+            "• <code>/dart [bet]</code> - Throw bullseye dart (up to 3.5x)\n"
+            "• <code>/basket [bet]</code> - Shoot basketball hoop (2.0x)\n"
+            "• <code>/slots [bet]</code> - 777 Animated slot machine (up to 10x)\n"
+            "• <code>/coinflip [h|t] [bet]</code> - Golden coinflip (1.95x)</blockquote>"
+        )
+    elif data == "gm_words":
+        text = (
+            "🔤 <b>ᴡᴏʀᴅ & ʙʀᴀɪɴ ᴄʜᴀʟʟᴇɴɢᴇs</b>\n\n"
+            "<blockquote>• <code>/words</code> - Word games hub menu\n"
+            "• <code>/wordseek</code> or <code>/ws</code> - 5-Letter Wordle game\n"
+            "• <code>/wsdaily</code> - Official daily wordle challenge\n"
+            "• <code>/riddle</code> - Brain-teaser riddles with coin prizes\n"
+            "• <code>/challenge</code> - Speed-typing banner contest</blockquote>"
+        )
+    elif data == "gm_shop":
+        text = (
+            "🛒 <b>ᴋɪᴛᴛᴜ ᴀʀᴍᴏʀʏ & ʙʟᴀᴄᴋ ᴍᴀʀᴋᴇᴛ</b>\n\n"
+            "<blockquote>• <code>/shop</code> - Browse combat gear with 1-click buy buttons\n"
+            "• <code>/buy &lt;item_id&gt;</code> - Purchase combat weapons or armor\n"
+            "• <code>/inventory</code> - View your owned weapons & shields</blockquote>"
+        )
+    else:
+        return
+
+    try:
+        await query.edit_message_text(text=text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(back_btn))
+        if chat:
+            touch_menu(context, chat.id)
+    except Exception:
+        pass
 
 
 def register_handlers(app: Application):
@@ -244,4 +353,5 @@ def register_handlers(app: Application):
     app.add_handler(CommandHandler("rob", rob_command))
     app.add_handler(CommandHandler("protect", protect_command))
     app.add_handler(CommandHandler("revive", revive_command))
-    app.add_handler(CommandHandler("game", games_menu))
+    app.add_handler(CommandHandler(["game", "games"], games_menu))
+    app.add_handler(CallbackQueryHandler(games_hub_callback, pattern=r"^gm_"))

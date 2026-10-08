@@ -158,12 +158,41 @@ class UnoGameSession:
         self.direction = 1  # 1 for clockwise, -1 for counter-clockwise
         self.active_color = "red"
         self.turn_timer_task = None
+        self.lobby_timer_task = None
         self.board_message_id = None
         self.last_sticker_message_id = None
+        self.consecutive_afk = 0
+        self.last_status_note = ""
 
 
 # Active games mapping: chat_id -> UnoGameSession
 UNO_GAMES: dict[int, UnoGameSession] = {}
+
+
+async def uno_lobby_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    """Auto-cancels an unstarted UNO lobby after 90s of inactivity to keep chat clean."""
+    try:
+        await asyncio.sleep(90)
+        if chat_id in UNO_GAMES:
+            game = UNO_GAMES[chat_id]
+            if not game.is_started:
+                del UNO_GAMES[chat_id]
+                if game.board_message_id:
+                    try:
+                        await context.bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=game.board_message_id,
+                            text="⌛ <b>ᴜɴᴏ ʟᴏʙʙʏ ᴇxᴘɪʀᴇᴅ</b>\n\n<blockquote>Lobby was auto-closed due to 90 seconds of inactivity.</blockquote>",
+                            parse_mode="HTML",
+                        )
+                        await asyncio.sleep(6)
+                        await context.bot.delete_message(chat_id=chat_id, message_id=game.board_message_id)
+                    except Exception:
+                        pass
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        log.debug(f"UNO lobby timeout exception: {e}")
 
 
 async def uno_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -216,10 +245,11 @@ async def uno_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👥 <b>ᴘʟᴀʏᴇʀs :</b> 1 / 6\n"
         f"🎨 <b>sᴛɪᴄᴋᴇʀ ᴘᴀᴄᴋ :</b> <code>{theme.title()} (@unocards)</code>\n"
         f"{bet_text}</blockquote>\n\n"
-        "🎋 <i>Click 'Join Lobby' to enter! Host can start with 2+ players.</i>",
+        "🎋 <i>Click 'Join Lobby' to enter! Host can start with 2+ players (Auto-expires in 90s).</i>",
         reply_markup=keyboard,
     )
     game.board_message_id = msg.message_id
+    game.lobby_timer_task = asyncio.create_task(uno_lobby_timeout(context, chat.id))
 
 
 async def unodeck_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -328,6 +358,8 @@ async def uno_leave_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     # If host leaves, cancel game
     if user.id == game.host.id:
+        if game.lobby_timer_task:
+            game.lobby_timer_task.cancel()
         del UNO_GAMES[chat_id]
         try:
             await query.answer("Host left! Lobby cancelled.", show_alert=True)
@@ -403,6 +435,8 @@ async def uno_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         pass
 
     game.is_started = True
+    if game.lobby_timer_task:
+        game.lobby_timer_task.cancel()
 
     # Deduct bets if any
     if game.bet > 0:
@@ -479,13 +513,15 @@ async def render_game_board(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     pot_str = f"\n💰 <b>ᴛᴏᴛᴀʟ ᴘᴏᴛ :</b> <code>{game.bet * len(game.players):,} Coins</code>" if game.bet > 0 else ""
     dir_str = "Clockwise ➡️" if game.direction == 1 else "Counter-Clockwise ⬅️"
 
+    note_str = f"\n\n<blockquote>{game.last_status_note}</blockquote>" if game.last_status_note else ""
+
     text = (
         "🃏 <b>ᴋɪᴛᴛᴜ ᴜɴᴏ ᴛᴀʙʟᴇ</b> 🎮\n\n"
         f"<blockquote><b>ᴛᴏᴘ ᴄᴀʀᴅ :</b> {format_card(top)}\n"
         f"<b>ᴀᴄᴛɪᴠᴇ ᴄᴏʟᴏʀ :</b> {top_emoji} {top_color.upper()}\n"
         f"<b>ᴏʀᴅᴇʀ :</b> {dir_str}\n"
         f"<b>ᴄᴜʀʀᴇɴᴛ ᴛᴜʀɴ :</b> {cur_player.mention_html()}{pot_str}</blockquote>\n\n"
-        f"<b>ᴘʟᴀʏᴇʀs :</b>\n{stats_str}\n\n"
+        f"<b>ᴘʟᴀʏᴇʀs :</b>\n{stats_str}{note_str}\n\n"
         f"🎋 <i>It's {cur_player.first_name}'s turn (45s)! Tap your card below or draw:</i>"
     )
 
@@ -552,13 +588,55 @@ async def render_game_board(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 
 
 async def uno_turn_timeout(context: ContextTypes.DEFAULT_TYPE, game: UnoGameSession, player_id: int):
-    """Auto-draws and skips turn if player is AFK for 45s."""
-    await asyncio.sleep(45)
+    """Auto-draws and skips turn if player is AFK for 45s. Auto-ends game if all players are inactive."""
+    try:
+        await asyncio.sleep(45)
+    except asyncio.CancelledError:
+        return
+
     if game.chat_id not in UNO_GAMES:
         return
 
     cur_player = game.players[game.current_idx]
     if cur_player.id != player_id:
+        return
+
+    game.consecutive_afk += 1
+
+    # Smart Auto-End: If players abandon the match (e.g. 2 full rounds inactive)
+    max_afk = max(3, len(game.players) * 2)
+    if game.consecutive_afk >= max_afk:
+        del UNO_GAMES[game.chat_id]
+
+        # Refund bets
+        if game.bet > 0:
+            for p in game.players:
+                await update_balance(p.id, game.bet)
+
+        # Delete last card sticker
+        if game.last_sticker_message_id:
+            try:
+                await context.bot.delete_message(chat_id=game.chat_id, message_id=game.last_sticker_message_id)
+            except Exception:
+                pass
+
+        refund_note = f"\nAll bets (<code>{game.bet:,} Coins</code> each) have been refunded! 🪙" if game.bet > 0 else ""
+        end_text = (
+            "💤 <b>ᴜɴᴏ ɢᴀᴍᴇ ᴀᴜᴛᴏ-ᴇɴᴅᴇᴅ (ᴀғᴋ)</b>\n\n"
+            f"<blockquote>Players were inactive for too long. Match ended.{refund_note}</blockquote>"
+        )
+        if game.board_message_id:
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=game.chat_id,
+                    message_id=game.board_message_id,
+                    text=end_text,
+                    parse_mode="HTML",
+                )
+                return
+            except Exception:
+                pass
+        await context.bot.send_message(chat_id=game.chat_id, text=end_text, parse_mode="HTML")
         return
 
     # Auto draw
@@ -568,11 +646,8 @@ async def uno_turn_timeout(context: ContextTypes.DEFAULT_TYPE, game: UnoGameSess
     game.hands[cur_player.id].append(drawn)
     game.current_idx = (game.current_idx + game.direction) % len(game.players)
 
-    await context.bot.send_message(
-        chat_id=game.chat_id,
-        text=f"⏳ <b>Time's up!</b> {cur_player.mention_html()} took too long. Auto-drew a card and passed turn!",
-        parse_mode="HTML",
-    )
+    # Note on board instead of spamming separate messages into chat
+    game.last_status_note = f"⏳ <i>{cur_player.first_name} timed out & auto-drew a card!</i>"
     await render_game_board(None, context, game)
 
 
@@ -728,6 +803,10 @@ async def execute_play_card(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         except Exception as e:
             log.warning(f"Failed to send UNO played card sticker: {e}")
 
+    # Reset AFK counter on active move
+    game.consecutive_afk = 0
+    game.last_status_note = ""
+
     # Check WIN CONDITION
     if len(hand) == 0:
         total_pot = game.bet * len(game.players)
@@ -738,19 +817,30 @@ async def execute_play_card(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             pot_text = "🎉 <b>Champion of the table!</b>"
 
         del UNO_GAMES[game.chat_id]
-        try:
-            await context.bot.send_message(
-                chat_id=game.chat_id,
-                text=(
-                    f"🎉 <b>ᴜɴᴏ! ᴡᴇ ʜᴀᴠᴇ ᴀ ᴡɪɴɴᴇʀ!</b> 🏆\n\n"
-                    f"<blockquote>👑 {user.mention_html()} played their final card <b>{format_card(card)}</b> and won the game!\n"
-                    f"{pot_text}</blockquote>\n\n"
-                    "🎋 <i>Type /uno to start another round!</i>"
-                ),
-                parse_mode="HTML",
-            )
-        except Exception:
-            pass
+        if game.last_sticker_message_id:
+            try:
+                await context.bot.delete_message(chat_id=game.chat_id, message_id=game.last_sticker_message_id)
+            except Exception:
+                pass
+
+        win_text = (
+            f"🎉 <b>ᴜɴᴏ! ᴡᴇ ʜᴀᴠᴇ ᴀ ᴡɪɴɴᴇʀ!</b> 🏆\n\n"
+            f"<blockquote>👑 {user.mention_html()} played their final card <b>{format_card(card)}</b> and won the game!\n"
+            f"{pot_text}</blockquote>\n\n"
+            "🎋 <i>Type /uno to start another round!</i>"
+        )
+        if game.board_message_id:
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=game.chat_id,
+                    message_id=game.board_message_id,
+                    text=win_text,
+                    parse_mode="HTML",
+                )
+                return
+            except Exception:
+                pass
+        await context.bot.send_message(chat_id=game.chat_id, text=win_text, parse_mode="HTML")
         return
 
     # Shout UNO if 1 card left
@@ -817,6 +907,10 @@ async def uno_draw_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     drawn = game.deck.pop()
     game.hands[user.id].append(drawn)
 
+    # Reset AFK counter on active draw
+    game.consecutive_afk = 0
+    game.last_status_note = ""
+
     # Pass turn
     game.current_idx = (game.current_idx + game.direction) % len(game.players)
 
@@ -856,6 +950,8 @@ async def end_uno_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if game.turn_timer_task:
         game.turn_timer_task.cancel()
+    if game.lobby_timer_task:
+        game.lobby_timer_task.cancel()
 
     # Refund bets if started
     if game.is_started and game.bet > 0:

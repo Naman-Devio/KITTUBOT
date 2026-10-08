@@ -474,6 +474,44 @@ async def coinflip_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def blackjack_inactivity_timeout(context: ContextTypes.DEFAULT_TYPE, session_key: str):
+    """Auto-refunds and closes an abandoned blackjack table after 60s of inactivity."""
+    try:
+        await asyncio.sleep(60)
+        if session_key in ACTIVE_BLACKJACK_GAMES:
+            game = ACTIVE_BLACKJACK_GAMES.pop(session_key)
+            user_id = game["user_id"]
+            chat_id = game["chat_id"]
+            bet = game["bet"]
+            message_id = game.get("message_id")
+
+            # Safely refund player's bet
+            await update_balance(user_id, bet)
+
+            end_text = (
+                "⌛ <b>ʙʟᴀᴄᴋᴊᴀᴄᴋ ᴛɪᴍᴇᴏᴜᴛ (ɪɴᴀᴄᴛɪᴠɪᴛʏ)</b> 🎰\n\n"
+                f"<blockquote>Table closed due to 60s of player inactivity.\n"
+                f"Your bet of <b>{bet:,} Coins</b> has been refunded! 🪙</blockquote>\n\n"
+                "🎋 <i>Type /blackjack to start a new table!</i>"
+            )
+            if message_id:
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text=end_text,
+                        parse_mode="HTML",
+                    )
+                    return
+                except Exception:
+                    pass
+            await context.bot.send_message(chat_id=chat_id, text=end_text, parse_mode="HTML")
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        log.debug(f"Blackjack timeout exception: {e}")
+
+
 # -------------------------------------------------------------
 # 6. /blackjack [bet] (Interactive 21)
 # -------------------------------------------------------------
@@ -541,6 +579,8 @@ async def blackjack_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "deck": deck,
         "player_hand": player_hand,
         "dealer_hand": dealer_hand,
+        "message_id": None,
+        "timeout_task": None,
     }
     ACTIVE_BLACKJACK_GAMES[session_key] = game_state
 
@@ -556,10 +596,12 @@ async def blackjack_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<blockquote>👤 <b>{user.first_name}'s Hand:</b> {format_bj_hand(player_hand)} (Score: <b>{p_score}</b>)\n"
         f"🎩 <b>Dealer's Hand:</b> {format_bj_hand(dealer_hand, hide_second=True)}\n"
         f"💰 <b>Current Bet:</b> <code>{bet:,} Coins</code></blockquote>\n\n"
-        "🎋 <i>Choose to Hit for another card or Stand with your total:</i>"
+        "🎋 <i>Choose to Hit for another card or Stand (Table auto-closes in 60s):</i>"
     )
 
-    await update.message.reply_html(text, reply_markup=keyboard)
+    sent = await update.message.reply_html(text, reply_markup=keyboard)
+    game_state["message_id"] = sent.message_id
+    game_state["timeout_task"] = asyncio.create_task(blackjack_inactivity_timeout(context, session_key))
 
 
 async def bj_hit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -591,6 +633,8 @@ async def bj_hit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if score > 21:
         # BUST!
+        if game.get("timeout_task"):
+            game["timeout_task"].cancel()
         del ACTIVE_BLACKJACK_GAMES[session_key]
         try:
             await query.answer("💥 BUST! Over 21!", show_alert=True)
@@ -604,6 +648,11 @@ async def bj_hit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
         return
+
+    # Reset inactivity countdown on hit
+    if game.get("timeout_task"):
+        game["timeout_task"].cancel()
+    game["timeout_task"] = asyncio.create_task(blackjack_inactivity_timeout(context, session_key))
 
     try:
         await query.answer(f"Hit [{card['suit']} {card['rank']}]! Score: {score}")
@@ -653,6 +702,8 @@ async def bj_stand_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
+    if game.get("timeout_task"):
+        game["timeout_task"].cancel()
     del ACTIVE_BLACKJACK_GAMES[session_key]
     player_score = calculate_bj_score(game["player_hand"])
 

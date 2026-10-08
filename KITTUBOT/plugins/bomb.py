@@ -45,6 +45,7 @@ class BombGame:
         self.is_started = False
         self.pot = bet
         self.timer_task = None
+        self.lobby_timeout_task = None
         self.board_msg_id = None
         self.round_num = 1
         self.created_at = time.time()
@@ -53,6 +54,32 @@ class BombGame:
 
 # Active bomb games: chat_id -> BombGame
 BOMB_GAMES: dict[int, BombGame] = {}
+
+
+async def bomb_lobby_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
+    """Auto-cancels unstarted bomb lobby after 90s to keep group clean."""
+    try:
+        await asyncio.sleep(90)
+        if chat_id in BOMB_GAMES:
+            game = BOMB_GAMES[chat_id]
+            if not game.is_started:
+                del BOMB_GAMES[chat_id]
+                if game.board_msg_id:
+                    try:
+                        await context.bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=game.board_msg_id,
+                            text="⌛ <b>ʙᴏᴍʙ ʟᴏʙʙʏ ᴇxᴘɪʀᴇᴅ</b>\n\n<blockquote>Lobby was closed due to 90s of inactivity.</blockquote>",
+                            parse_mode="HTML",
+                        )
+                        await asyncio.sleep(6)
+                        await context.bot.delete_message(chat_id=chat_id, message_id=game.board_msg_id)
+                    except Exception:
+                        pass
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        pass
 
 
 async def bomb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -65,8 +92,9 @@ async def bomb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if chat.id in BOMB_GAMES:
         existing = BOMB_GAMES[chat.id]
-        # Auto-expire unstarted lobby older than 180s
-        if not existing.is_started and (time.time() - existing.created_at) > 180:
+        if not existing.is_started and (time.time() - existing.created_at) > 90:
+            if existing.lobby_timeout_task:
+                existing.lobby_timeout_task.cancel()
             del BOMB_GAMES[chat.id]
         else:
             await update.message.reply_html("⚠️ <b>A bomb game is already active in this chat!</b>")
@@ -105,10 +133,11 @@ async def bomb_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 <b>ᴇɴᴛʀʏ ʙᴇᴛ :</b> <code>{bet:,} Coins</code>\n"
         f"👥 <b>ᴘʟᴀʏᴇʀs :</b> 1\n"
         f"🏆 <b>ᴘʀɪᴢᴇ ᴘᴏᴛ :</b> <code>{bet:,} Coins</code></blockquote>\n\n"
-        "🎋 <i>Click 'Join Bomb' or type /join! Host can start with 2+ players.</i>",
+        "🎋 <i>Click 'Join Bomb' or type /join! Host can start with 2+ players (Auto-expires in 90s).</i>",
         reply_markup=keyboard,
     )
     game.board_msg_id = msg.message_id
+    game.lobby_timeout_task = asyncio.create_task(bomb_lobby_timeout(context, chat.id))
 
 
 async def join_bomb(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -221,6 +250,8 @@ async def start_bomb_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     for p in game.players:
         await update_balance(p.id, -game.bet)
 
+    if game.lobby_timeout_task:
+        game.lobby_timeout_task.cancel()
     game.is_started = True
     game.active_players = list(game.players)
     game.current_holder = random.choice(game.active_players)
@@ -394,6 +425,8 @@ async def bomb_cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if game.timer_task:
         game.timer_task.cancel()
+    if game.lobby_timeout_task:
+        game.lobby_timeout_task.cancel()
 
     # Refund if game was started
     if game.is_started:
