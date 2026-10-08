@@ -1,0 +1,88 @@
+{
+  "name": "KittuBot",
+  "description": "The Next-Gen Telegram AI Companion, Game Hub & Group Manager built on PTB v22.",
+  "keywords": [
+    "telegram",
+    "bot",
+    "python",
+    "ai",
+    "games",
+    "uno",
+    "wordle",
+    "waifu"
+  ],
+  "repository": "https://github.com/Naman-Devio/KITTUBOT",
+  "website": "https://t.me/echowavesupport",
+  "logo": "https://files.catbox.moe/1skpsn.png",
+  "success_url": "https://t.me/echowavesupport",
+  "stack": "heroku-22",
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "eco"
+    }
+  },
+  "env": {
+    "BOT_TOKEN": {
+      "description": "Your Telegram Bot Token from @BotFather",
+      "required": true
+    },
+    "BOT_NAME": {
+      "description": "Name of your bot",
+      "value": "Kittu",
+      "required": false
+    },
+    "BOT_USERNAME": {
+      "description": "Username of your bot (without @)",
+      "required": true
+    },
+    "OWNER_ID": {
+      "description": "Your numerical Telegram User ID (get from @userinfobot)",
+      "value": "8557551725",
+      "required": true
+    },
+    "MONGO_URI": {
+      "description": "Your MongoDB Atlas connection URI",
+      "required": true
+    },
+    "DATABASE_NAME": {
+      "description": "Primary MongoDB database name",
+      "value": "kittubot_db",
+      "required": false
+    },
+    "WAIFU_DB_NAME": {
+      "description": "Waifu gacha database name",
+      "value": "grabwaifu",
+      "required": false
+    },
+    "SUDO_IDS": {
+      "description": "Comma-separated list of sudo user IDs",
+      "value": "8557551725",
+      "required": false
+    },
+    "LOGGER_ID": {
+      "description": "Telegram group/channel ID for bot activity logs",
+      "value": "-1003935280870",
+      "required": false
+    },
+    "GROQ_API_KEY": {
+      "description": "Groq Cloud API Key for AI companion conversations",
+      "required": false
+    },
+    "SUPPORT_CHAT_LINK": {
+      "description": "Your Telegram support group invite link",
+      "value": "https://t.me/+cWCtXiDOgIxlZWQ1",
+      "required": false
+    },
+    "SUPPORT_CHANNEL_LINK": {
+      "description": "Your Telegram updates channel link",
+      "value": "https://t.me/echowavesupport",
+      "required": false
+    }
+  }
+}
