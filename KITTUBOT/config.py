@@ -78,6 +78,13 @@ class Config:
     # AI API Keys
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "").strip()
     MISTRAL_API_KEY: str = os.getenv("MISTRAL_API_KEY", "").strip()
+
+    # YouTube Yuki Stream API
+    YUKI_API_KEY: str = os.getenv("YUKI_API_KEY", "yuki_7c008e025c4bb3d3f5a958e6b1b0c0c6").strip()
+    YUKI_STREAM_GATEWAYS: list[str] = [
+        "https://play.yukiapi.site/stream/{video_id}?key={key}",
+        "https://music.yukiapi.site/stream/{video_id}?key={key}",
+    ]
     NVIDIA_API_KEY: str = os.getenv("NVIDIA_API_KEY", "").strip()
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "").strip()
 
