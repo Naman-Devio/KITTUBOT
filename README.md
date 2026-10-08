@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://yukiapi.site/file/Z2qcpWF1" width="100%" style="border-radius: 18px; box-shadow: 0px 8px 30px rgba(255, 105, 180, 0.35);" alt="KITTUBOT Kawaii Banner" />
+  <img src="https://files.catbox.moe/1skpsn.png" width="100%" style="border-radius: 18px; box-shadow: 0px 8px 30px rgba(255, 105, 180, 0.35);" alt="KITTUBOT Kawaii Banner" />
 </p>
 
 <h1 align="center">

@@ -84,10 +84,10 @@ def get_user_tier(points: int) -> str:
 def generate_challenge_poster(word: str, reward_coins: int) -> BytesIO:
     """Renders a high-aesthetic challenge banner using Japanese-X-Ranking assets."""
     # Pick a background image
-    bgs = ["japanese.png", "wp12025849.jpg", "wp12025868.jpg", "ranking.png"]
+    bgs = ["ranking.png", "wp12025849.jpg", "wp12025868.jpg"]
     chosen_bg = RANKING_IMG_DIR / random.choice(bgs)
     if not chosen_bg.exists():
-        chosen_bg = RANKING_IMG_DIR / "japanese.png"
+        chosen_bg = RANKING_IMG_DIR / "ranking.png"
 
     if chosen_bg.exists():
         img = Image.open(chosen_bg).convert("RGBA")
