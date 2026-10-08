@@ -16,6 +16,7 @@ Features:
 
 import os
 import json
+import base64
 import random
 import asyncio
 from pathlib import Path
@@ -64,6 +65,65 @@ except Exception as e:
     log.error(f"Failed to load UNO card sticker decks: {e}")
 
 DEFAULT_THEME = "classic"
+
+
+def get_unique_payload(fid_str: str) -> bytes:
+    """Extracts internal MTProto document identifier payload from a Telegram file_id."""
+    try:
+        pad = len(fid_str) % 4
+        if pad:
+            fid_str += "=" * (4 - pad)
+        raw = base64.urlsafe_b64decode(fid_str)
+        if len(raw) >= 19:
+            return raw[-19:-2]
+        return raw
+    except Exception:
+        return fid_str.encode("utf-8")
+
+
+# Precompute sticker payload lookup tables for instant 0ms recognition
+THEME_PAYLOADS: dict[str, dict[str, dict[bytes, str]]] = {}
+for theme_name, tdata in THEMES.items():
+    THEME_PAYLOADS[theme_name] = {"STICKERS": {}, "STICKERS_GREY": {}}
+    for k, fid in tdata.get("STICKERS", {}).items():
+        THEME_PAYLOADS[theme_name]["STICKERS"][get_unique_payload(fid)] = k
+    for k, fid in tdata.get("STICKERS_GREY", {}).items():
+        THEME_PAYLOADS[theme_name]["STICKERS_GREY"][get_unique_payload(fid)] = k
+
+
+def resolve_sticker_key(theme: str, file_id: str) -> tuple[str | None, bool]:
+    """
+    Resolves any Telegram sticker file_id (static or incoming dynamic)
+    to its card key (e.g. 'b_0', 'option_draw', etc.) and whether it's grey.
+    Returns: (card_key, is_grey)
+    """
+    payload = get_unique_payload(file_id)
+    t_payloads = THEME_PAYLOADS.get(theme) or THEME_PAYLOADS.get(DEFAULT_THEME, {})
+
+    # 1. Match against active theme
+    if payload in t_payloads.get("STICKERS", {}):
+        return t_payloads["STICKERS"][payload], False
+    if payload in t_payloads.get("STICKERS_GREY", {}):
+        return t_payloads["STICKERS_GREY"][payload], True
+
+    # 2. Check across other themes in case of cross-theme sticker
+    for t_name, maps in THEME_PAYLOADS.items():
+        if payload in maps.get("STICKERS", {}):
+            return maps["STICKERS"][payload], False
+        if payload in maps.get("STICKERS_GREY", {}):
+            return maps["STICKERS_GREY"][payload], True
+
+    # 3. Direct string match fallback
+    deck_data = THEMES.get(theme) or THEMES.get(DEFAULT_THEME, {})
+    for k, fid in deck_data.get("STICKERS", {}).items():
+        if fid == file_id:
+            return k, False
+    for k, fid in deck_data.get("STICKERS_GREY", {}).items():
+        if fid == file_id:
+            return k, True
+
+    return None, False
+
 
 COLORS = ["red", "blue", "green", "yellow"]
 COLOR_EMOJIS = {
@@ -531,9 +591,9 @@ async def start_uno_game(context: ContextTypes.DEFAULT_TYPE, game: UnoGameSessio
     for p in game.players:
         game.hands[p.id] = [game.deck.pop() for _ in range(7)]
 
-    # Draw first top card (ensure non-wild)
+    # Draw first top card (ensure non-action, non-wild number card 0-9)
     top_card = game.deck.pop()
-    while top_card["color"] == "wild":
+    while top_card["color"] == "wild" or top_card["val"] in ACTIONS:
         game.deck.append(top_card)
         random.shuffle(game.deck)
         top_card = game.deck.pop()
@@ -544,6 +604,10 @@ async def start_uno_game(context: ContextTypes.DEFAULT_TYPE, game: UnoGameSessio
     # Delete lobby message to keep chat tidy
     msg_id = game.lobby_message_id
     if msg_id:
+        try:
+            await context.bot.edit_message_reply_markup(chat_id=game.chat_id, message_id=msg_id, reply_markup=None)
+        except Exception:
+            pass
         try:
             await context.bot.delete_message(chat_id=game.chat_id, message_id=msg_id)
         except Exception:
@@ -666,6 +730,12 @@ async def render_game_board(
         if send_new:
             # Delete old board message if present to place new board cleanly beneath latest sticker
             if game.board_message_id:
+                try:
+                    await context.bot.edit_message_reply_markup(
+                        chat_id=game.chat_id, message_id=game.board_message_id, reply_markup=None
+                    )
+                except Exception:
+                    pass
                 try:
                     await context.bot.delete_message(chat_id=game.chat_id, message_id=game.board_message_id)
                 except Exception:
@@ -853,13 +923,16 @@ async def uno_via_bot_sticker_handler(update: Update, context: ContextTypes.DEFA
             pass
         return
 
-    stk_id = msg.sticker.file_id
-    deck_data = THEMES.get(game.theme) or THEMES.get(DEFAULT_THEME, {})
-    stickers_norm = deck_data.get("STICKERS", {})
-    stickers_grey = deck_data.get("STICKERS_GREY", {})
+    card_key, is_grey_card = resolve_sticker_key(game.theme, msg.sticker.file_id)
+    if not card_key:
+        try:
+            await msg.delete()
+        except Exception:
+            pass
+        return
 
     # Check if option_draw was tapped
-    if stk_id == stickers_norm.get("option_draw"):
+    if card_key == "option_draw":
         try:
             await msg.delete()
         except Exception:
@@ -868,7 +941,7 @@ async def uno_via_bot_sticker_handler(update: Update, context: ContextTypes.DEFA
         return
 
     # Check if option_pass was tapped
-    if stk_id == stickers_norm.get("option_pass"):
+    if card_key == "option_pass":
         try:
             await msg.delete()
         except Exception:
@@ -877,12 +950,12 @@ async def uno_via_bot_sticker_handler(update: Update, context: ContextTypes.DEFA
         return
 
     # Check if option_info was tapped
-    if stk_id == stickers_norm.get("option_info"):
+    if card_key == "option_info":
         try:
             await msg.delete()
         except Exception:
             pass
-        game.last_status_note = f"ℹ️ <i>Match the top card color/value or play a Wild card!</i>"
+        game.last_status_note = "ℹ️ <i>Match the top card color/value or play a Wild card!</i>"
         await render_game_board(None, context, game, send_new=False)
         return
 
@@ -890,16 +963,10 @@ async def uno_via_bot_sticker_handler(update: Update, context: ContextTypes.DEFA
     hand = game.hands.get(cur_player.id, [])
     top_card = game.discard_pile[-1]
     matched_idx = None
-    is_grey_card = False
 
     for idx, c in enumerate(hand):
-        k = get_card_key(c)
-        if stk_id == stickers_norm.get(k):
+        if get_card_key(c) == card_key:
             matched_idx = idx
-            break
-        elif stk_id == stickers_grey.get(k):
-            matched_idx = idx
-            is_grey_card = True
             break
 
     if matched_idx is None:
@@ -937,7 +1004,7 @@ async def execute_play_card_sticker(
     game: UnoGameSession,
     cur_player: User,
     card_idx: int,
-    stk_msg: Update,
+    stk_msg: any,
 ):
     """Executes a valid card play via sticker."""
     hand = game.hands.get(cur_player.id, [])
@@ -955,14 +1022,16 @@ async def execute_play_card_sticker(
     game.last_status_note = ""
 
     # Delete old top card sticker to keep the chat tidy
-    if game.last_sticker_message_id and game.last_sticker_message_id != stk_msg.message_id:
+    new_mid = getattr(stk_msg, "message_id", None)
+    if game.last_sticker_message_id and new_mid and game.last_sticker_message_id != new_mid:
         try:
             await context.bot.delete_message(chat_id=game.chat_id, message_id=game.last_sticker_message_id)
         except Exception:
             pass
 
     # The played sticker is now the new top card sticker!
-    game.last_sticker_message_id = stk_msg.message_id
+    if new_mid:
+        game.last_sticker_message_id = new_mid
 
     # Check WIN CONDITION
     if len(hand) == 0:
@@ -1248,14 +1317,14 @@ async def uno_secret_hand_callback(update: Update, context: ContextTypes.DEFAULT
     top = game.discard_pile[-1]
     is_turn = (game.players[game.current_idx].id == user.id)
 
-    lines = []
+    card_items = []
     for c in hand:
         playable = is_turn and is_card_playable(c, top, game.active_color)
         badge = "✨" if playable else ""
-        lines.append(f"{badge} {format_card(c)}")
+        card_items.append(f"{format_card_button(c)}{badge}")
 
     turn_str = "👉 YOUR TURN!" if is_turn else f"Turn: {game.players[game.current_idx].first_name}"
-    alert_text = f"🎴 Your Secret Hand ({len(hand)} cards)\n{turn_str}\n\n" + "\n".join(lines)
+    alert_text = f"🎴 Your Hand ({len(hand)}):\n{', '.join(card_items)}\n\n{turn_str}"
 
     try:
         await query.answer(alert_text[:190], show_alert=True)
@@ -1460,4 +1529,14 @@ def register_handlers(app: Application):
 
     # Telegram Inline Query & Played Sticker Listeners
     app.add_handler(InlineQueryHandler(uno_inline_query_handler))
+    app.add_handler(ChosenInlineResultHandler(uno_chosen_inline_result_handler))
     app.add_handler(MessageHandler(filters.Sticker.ALL & filters.VIA_BOT, uno_via_bot_sticker_handler))
+
+
+async def uno_chosen_inline_result_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Listens to chosen inline results (if enabled in BotFather)."""
+    cir = update.chosen_inline_result
+    if not cir:
+        return
+    log.debug(f"UNO Chosen Inline Result: user={cir.from_user.id}, result_id={cir.result_id}")
+
