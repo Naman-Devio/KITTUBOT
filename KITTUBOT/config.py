@@ -56,9 +56,18 @@ class Config:
     ).strip()
 
     START_IMG_URL: list[str] = [
-        "https://files.catbox.moe/04yc10.mp4",
-        "https://telegra.ph/file/9b7e1b820c72a14d90be7.mp4",
-        "https://telegra.ph/file/a4d90b0cb759b67d68644.mp4",
+	"https://yukiapi.site/file/6CXCn2De",
+	"https://yukiapi.site/file/YWwD9Qr8",
+	"https://yukiapi.site/file/rsCNQf0j",
+	"https://yukiapi.site/file/dWFtIZny",
+	"https://yukiapi.site/file/eYtZuZwz",
+	"https://yukiapi.site/file/euiiZogt",
+	"https://yukiapi.site/file/UcidJrAQ",
+	"https://yukiapi.site/file/AtKzDFZU",
+	"https://yukiapi.site/file/nGA7YMtQ",
+	"https://yukiapi.site/file/aQSUKqZk",
+	"https://yukiapi.site/file/ns7QmFhQ",
+	"https://yukiapi.site/file/tZCMxz2a",
     ]
 
     HELP_IMG_URL: str = os.getenv(
@@ -80,7 +89,7 @@ class Config:
     MISTRAL_API_KEY: str = os.getenv("MISTRAL_API_KEY", "").strip()
 
     # YouTube Yuki Stream API
-    YUKI_API_KEY: str = os.getenv("YUKI_API_KEY", "yuki_7c008e025c4bb3d3f5a958e6b1b0c0c6").strip()
+    YUKI_API_KEY: str = os.getenv("YUKI_API_KEY", "").strip()
     YUKI_STREAM_GATEWAYS: list[str] = [
         "https://play.yukiapi.site/stream/{video_id}?key={key}",
         "https://music.yukiapi.site/stream/{video_id}?key={key}",
