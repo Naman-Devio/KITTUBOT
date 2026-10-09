@@ -12,6 +12,7 @@ import time
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from KITTUBOT.config import config
+from KITTUBOT.core.permissions import resolve_target_user, TargetUser
 from KITTUBOT.database.users import (
     ensure_user,
     get_user,
@@ -26,10 +27,10 @@ from KITTUBOT.database import users_col
 __mod_name__ = "Games"
 __help__ = """
 <blockquote>⚔️ <b>ᴄᴏᴍʙᴀᴛ & ɢʀᴏᴜᴘ ɢᴀᴍᴇs:</b>
-• <code>/kill</code> - (ʀᴇᴘʟʏ) ᴀssᴀssɪɴᴀᴛᴇ ᴀ ᴍᴇᴍʙᴇʀ ғᴏʀ ʙᴏᴜɴᴛʏ
-• <code>/rob</code> - (ʀᴇᴘʟʏ) sᴛᴇᴀʟ ᴄᴏɪɴs ғʀᴏᴍ ᴀ ᴘʟᴀʏᴇʀ
+• <code>/kill [reply|@user|id]</code> - ᴀssᴀssɪɴᴀᴛᴇ ᴀ ᴍᴇᴍʙᴇʀ ғᴏʀ ʙᴏᴜɴᴛʏ
+• <code>/rob [reply|@user|id]</code> - sᴛᴇᴀʟ ᴄᴏɪɴs ғʀᴏᴍ ᴀ ᴘʟᴀʏᴇʀ
 • <code>/protect [1|2]</code> - ʙᴜʏ ɪɴᴠᴜʟɴᴇʀᴀʙɪʟɪᴛʏ sʜɪᴇʟᴅ
-• <code>/revive</code> - ʀᴇᴠɪᴠᴇ ʏᴏᴜʀsᴇʟғ ᴏʀ ᴀ ғᴀʟʟᴇɴ ғʀɪᴇɴᴅ
+• <code>/revive [reply|@user|id]</code> - ʀᴇᴠɪᴠᴇ ʏᴏᴜʀsᴇʟғ ᴏʀ ᴀ ғᴀʟʟᴇɴ ғʀɪᴇɴᴅ
 • <code>/game</code> - ᴠɪᴇᴡ ᴄᴏᴍʙᴀᴛ ɢᴀᴍᴇs ᴍᴇɴᴜ</blockquote>
 """
 
@@ -39,24 +40,33 @@ LAST_ROB_TIME: dict[int, float] = {}
 
 
 async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
     attacker = update.effective_user
-    reply = update.message.reply_to_message
+    if not message or not attacker:
+        return
 
-    if not reply or not reply.from_user or reply.from_user.is_bot:
-        await update.message.reply_html("⚠️ <b>Reply to a member</b> to attack them!")
+    target, _ = await resolve_target_user(update, context)
+    if not target or getattr(target, "is_bot", False):
+        await message.reply_html(
+            "⚠️ <b>Specify a member to assassinate!</b>\n"
+            "<i>Reply to their message or provide @username / user ID:</i>\n"
+            "• <code>/kill @username</code>\n"
+            "• <code>/kill 123456789</code>\n"
+            "• <code>/kill</code> (by replying)"
+        )
+        return
+
+    victim = target
+    if victim.id == attacker.id:
+        await message.reply_html("😅 Suicide is not allowed! Stay positive!")
         return
 
     now = time.time()
     if now - LAST_KILL_TIME.get(attacker.id, 0) < config.KILL_COOLDOWN_SECONDS:
         wait = max(1, int(config.KILL_COOLDOWN_SECONDS - (now - LAST_KILL_TIME.get(attacker.id, 0))))
-        await update.message.reply_html(f"⏳ <b>Catch your breath!</b> Wait {wait}s before attacking again.")
+        await message.reply_html(f"⏳ <b>Catch your breath!</b> Wait {wait}s before attacking again.")
         return
     LAST_KILL_TIME[attacker.id] = now
-
-    victim = reply.from_user
-    if victim.id == attacker.id:
-        await update.message.reply_html("😅 Suicide is not allowed! Stay positive!")
-        return
 
     attacker_data = await ensure_user(attacker)
     victim_data = await ensure_user(victim)
@@ -64,15 +74,15 @@ async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if attacker_data.get("is_dead"):
         await check_auto_revive(attacker_data)
         if attacker_data.get("is_dead"):
-            await update.message.reply_html("☠️ You are dead! Revive yourself first with <code>/revive</code>.")
+            await message.reply_html("☠️ You are dead! Revive yourself first with <code>/revive</code>.")
             return
 
     if victim_data.get("is_dead"):
-        await update.message.reply_html(f"☠️ {victim.mention_html()} is already dead! Let them rest.")
+        await message.reply_html(f"☠️ {victim.mention_html()} is already dead! Let them rest.")
         return
 
     if await is_protected(victim.id):
-        await update.message.reply_html(f"🛡️ {victim.mention_html()} has an active shield! Your attack bounced off!")
+        await message.reply_html(f"🛡️ {victim.mention_html()} has an active shield! Your attack bounced off!")
         return
 
     attacker_inv = attacker_data.get("inventory", [])
@@ -98,7 +108,7 @@ async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             weapons.append("a long-range 50-cal sniper rifle 🎯")
         chosen_weapon = random.choice(weapons)
 
-        await update.message.reply_html(
+        await message.reply_html(
             f"☠️ <b>ᴀssᴀssɪɴᴀᴛɪᴏɴ sᴜᴄᴄᴇssғᴜʟ!</b>\n\n"
             f"<blockquote>{attacker.mention_html()} eliminated {victim.mention_html()} using {chosen_weapon}!\n"
             f"💰 Bounty claimed: <b>+{bounty} Coins</b>.</blockquote>\n"
@@ -107,29 +117,38 @@ async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         penalty = 150
         await update_balance(attacker.id, -penalty)
-        await update.message.reply_html(
+        await message.reply_html(
             f"🛡️ <b>ᴀᴛᴛᴀᴄᴋ ғᴀɪʟᴇᴅ!</b>\n\n"
             f"<blockquote>{victim.mention_html()} dodged your strike! You tripped and lost <b>-{penalty} Coins</b>. 😂</blockquote>"
         )
 
 
 async def rob_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
     thief = update.effective_user
-    reply = update.message.reply_to_message
-
-    if not reply or not reply.from_user or reply.from_user.is_bot:
-        await update.message.reply_html("⚠️ <b>Reply to a member</b> to rob them!")
+    if not message or not thief:
         return
 
-    victim = reply.from_user
+    target, _ = await resolve_target_user(update, context)
+    if not target or getattr(target, "is_bot", False):
+        await message.reply_html(
+            "⚠️ <b>Specify a member to rob!</b>\n"
+            "<i>Reply to their message or provide @username / user ID:</i>\n"
+            "• <code>/rob @username</code>\n"
+            "• <code>/rob 123456789</code>\n"
+            "• <code>/rob</code> (by replying)"
+        )
+        return
+
+    victim = target
     if victim.id == thief.id:
-        await update.message.reply_html("😂 You cannot rob yourself!")
+        await message.reply_html("😂 You cannot rob yourself!")
         return
 
     now = time.time()
     if now - LAST_ROB_TIME.get(thief.id, 0) < 10:
         wait = max(1, int(10 - (now - LAST_ROB_TIME.get(thief.id, 0))))
-        await update.message.reply_html(f"⏳ <b>Keep a low profile!</b> Wait {wait}s before another heist.")
+        await message.reply_html(f"⏳ <b>Keep a low profile!</b> Wait {wait}s before another heist.")
         return
     LAST_ROB_TIME[thief.id] = now
 
@@ -137,16 +156,16 @@ async def rob_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     victim_data = await ensure_user(victim)
 
     if thief_data.get("is_dead"):
-        await update.message.reply_html("☠️ You are dead! Dead people cannot rob.")
+        await message.reply_html("☠️ You are dead! Dead people cannot rob.")
         return
 
     if await is_protected(victim.id):
-        await update.message.reply_html(f"🛡️ {victim.mention_html()} is protected by security shields!")
+        await message.reply_html(f"🛡️ {victim.mention_html()} is protected by security shields!")
         return
 
     victim_bal = victim_data.get("balance", 0)
     if victim_bal < 200:
-        await update.message.reply_html(f"🤷 {victim.mention_html()} is broke! Nothing to steal.")
+        await message.reply_html(f"🤷 {victim.mention_html()} is broke! Nothing to steal.")
         return
 
     victim_inv = victim_data.get("inventory", [])
@@ -158,7 +177,7 @@ async def rob_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stolen = min(int(victim_bal * random.uniform(0.15, 0.35)), config.ROB_MAX_AMOUNT)
         await update_balance(victim.id, -stolen)
         await update_balance(thief.id, stolen)
-        await update.message.reply_html(
+        await message.reply_html(
             f"🥷 <b>ʜᴇɪsᴛ sᴜᴄᴄᴇssғᴜʟ!</b>\n\n"
             f"<blockquote>{thief.mention_html()} sneaked in and stole <b>{stolen:,} Coins</b> from {victim.mention_html()}! 💰</blockquote>"
         )
@@ -166,14 +185,18 @@ async def rob_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         fine = min(300, thief_data.get("balance", 0))
         await update_balance(thief.id, -fine)
         await update_balance(victim.id, fine)
-        await update.message.reply_html(
+        await message.reply_html(
             f"🚨 <b>ʙᴜsᴛᴇᴅ ʙʏ ᴘᴏʟɪᴄᴇ!</b>\n\n"
             f"<blockquote>{thief.mention_html()} got caught red-handed and paid <b>{fine:,} Coins</b> in damages to {victim.mention_html()}!</blockquote>"
         )
 
 
 async def protect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
     user = update.effective_user
+    if not message or not user:
+        return
+
     user_data = await ensure_user(user)
 
     days = 1
@@ -182,40 +205,45 @@ async def protect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     cost = config.PROTECT_1D_COST if days == 1 else config.PROTECT_2D_COST
     if user_data.get("balance", 0) < cost:
-        await update.message.reply_html(f"❌ You need <b>{cost:,} Coins</b> for a {days}-day shield!")
+        await message.reply_html(f"❌ You need <b>{cost:,} Coins</b> for a {days}-day shield!")
         return
 
     await update_balance(user.id, -cost)
     await set_protection(user.id, days * 86400)
 
-    await update.message.reply_html(
+    await message.reply_html(
         f"🛡️ <b>sʜɪᴇʟᴅ ᴀᴄᴛɪᴠᴀᴛᴇᴅ!</b>\n\n"
         f"<blockquote>{user.mention_html()} is now immune to /kill and /rob for the next <b>{days} day(s)</b>! ✨</blockquote>"
     )
 
 
 async def revive_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
     user = update.effective_user
-    reply = update.message.reply_to_message
+    if not message or not user:
+        return
 
-    target = reply.from_user if (reply and reply.from_user and not reply.from_user.is_bot) else user
+    target, _ = await resolve_target_user(update, context)
+    if not target or getattr(target, "is_bot", False):
+        target = user
+
     target_data = await ensure_user(target)
 
     if not target_data.get("is_dead"):
         msg = "You are already alive!" if target.id == user.id else f"{target.mention_html()} is already alive!"
-        await update.message.reply_html(f"❤️ {msg}")
+        await message.reply_html(f"❤️ {msg}")
         return
 
     payer_data = await ensure_user(user)
     if payer_data.get("balance", 0) < config.REVIVE_COST:
-        await update.message.reply_html(f"❌ Revive costs <b>{config.REVIVE_COST:,} Coins</b>!")
+        await message.reply_html(f"❌ Revive costs <b>{config.REVIVE_COST:,} Coins</b>!")
         return
 
     await update_balance(user.id, -config.REVIVE_COST)
     await set_user_dead(target.id, False)
 
     who = f"{user.mention_html()} revived themselves" if target.id == user.id else f"{user.mention_html()} generously revived {target.mention_html()}"
-    await update.message.reply_html(
+    await message.reply_html(
         f"✨ <b>ʀᴇᴠɪᴠᴇᴅ!</b>\n\n"
         f"<blockquote>{who} for <b>{config.REVIVE_COST} Coins</b>! 💖</blockquote>"
     )
@@ -266,9 +294,11 @@ async def games_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
     else:
-        sent = await update.message.reply_html(text, reply_markup=keyboard)
-        if chat and chat.type != "private":
-            await track_menu(context, chat.id, sent.message_id, auto_delete_seconds=180, is_group=True)
+        message = update.effective_message
+        if message:
+            sent = await message.reply_html(text, reply_markup=keyboard)
+            if chat and chat.type != "private":
+                await track_menu(context, chat.id, sent.message_id, auto_delete_seconds=180, is_group=True)
 
 
 async def games_hub_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
