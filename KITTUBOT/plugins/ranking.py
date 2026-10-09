@@ -400,23 +400,28 @@ async def ranking_callback_handler(update: Update, context: ContextTypes.DEFAULT
     elif data.startswith("rank_back_"):
         target_uid = int(data.split("_")[2])
         # Re-fetch user rank and display
-        user_stats = await get_user_chat_rank(chat.id, target_uid)
+        rank, chat_data = await get_user_chat_rank(chat.id, target_uid)
         g_stats = await get_user_global_stats(target_uid)
 
-        points = user_stats.get("points", 0)
-        messages = user_stats.get("messages", 0)
-        wins = user_stats.get("typing_wins", 0)
+        points = chat_data.get("points", 0) if chat_data else 0
+        messages = chat_data.get("messages", 0) if chat_data else 0
+        wins = chat_data.get("typing_wins", 0) if chat_data else 0
         tier = get_user_tier(points)
-        rank_pos = user_stats.get("rank")
-        rank_str = f"#{rank_pos}" if rank_pos else "Unranked"
+        rank_str = f"#{rank}" if rank > 0 else "Unranked"
 
-        g_points = g_stats.get("total_points", 0)
-        g_msgs = g_stats.get("total_messages", 0)
-        g_wins = g_stats.get("total_typing_wins", 0)
+        g_points = g_stats.get("total_points", points)
+        g_msgs = g_stats.get("total_messages", messages)
+        g_wins = g_stats.get("total_typing_wins", wins)
+
+        if target_uid == query.from_user.id:
+            user_label = query.from_user.mention_html()
+        else:
+            first_name = chat_data.get("first_name", "User") if chat_data else "User"
+            user_label = f"<b>{first_name}</b>"
 
         card_text = (
             f"🏆 <b>ᴋɪᴛᴛᴜ ᴄʜᴀᴛ ʀᴀɴᴋɪɴɢ sᴛᴀᴛᴜs</b> 🎌\n\n"
-            f"<blockquote>👤 <b>ᴜsᴇʀ :</b> {query.from_user.mention_html()}\n"
+            f"<blockquote>👤 <b>ᴜsᴇʀ :</b> {user_label}\n"
             f"🎖️ <b>ᴛɪᴇʀ :</b> {tier}\n"
             f"📊 <b>ɢʀᴏᴜᴘ ʀᴀɴᴋ :</b> <code>{rank_str}</code>\n"
             f"✨ <b>ɢʀᴏᴜᴘ xᴘ :</b> <code>{points:,} Points</code>\n"
