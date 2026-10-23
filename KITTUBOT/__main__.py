@@ -53,6 +53,9 @@ async def post_init(application: Application):
         BotCommand("anime", "Search anime synopsis & score"),
         BotCommand("tts", "Convert text to voice message"),
         BotCommand("dl", "Download video from social media"),
+        BotCommand("models", "Switch AI models & reasoning depth"),
+        BotCommand("imagine", "Generate high-res AI images"),
+        BotCommand("abuse", "Toggle smart auto-moderation"),
     ]
     try:
         await application.bot.set_my_commands(commands)

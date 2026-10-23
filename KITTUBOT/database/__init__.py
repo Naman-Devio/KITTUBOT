@@ -34,6 +34,9 @@ stats_col = db["bot_stats"]
 locks_col = db["chat_locks"]
 afk_col = db["afk"]
 rankings_col = db["chat_rankings"]
+stickers_col = db["stickers_pool"]
+automod_col = db["automod_settings"]
+user_models_col = db["user_models"]
 
 # Waifu Gacha Collections (from user's real waifu database)
 waifu_db = client[config.WAIFU_DB_NAME]
