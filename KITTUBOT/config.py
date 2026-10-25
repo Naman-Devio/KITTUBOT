@@ -87,6 +87,16 @@ class Config:
     # AI API Keys
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "").strip()
     MISTRAL_API_KEY: str = os.getenv("MISTRAL_API_KEY", "").strip()
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "").strip()
+
+    # Voice Companion (ElevenLabs TTS)
+    ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "").strip()
+    ELEVENLABS_VOICE_IDS: list[str] = _get_list("ELEVENLABS_VOICE_IDS", [
+        "CNKl99QEbWm8RQ4D8GfC", "MhnQB6oLKSlS0AIJzxtO",
+        "xYrwTY3IRh6VBodoZUNN", "JTlYtJrcTzPC71hMLOxo",
+        "ljCTqT1biPnI7ZjS5gyi", "RxivyypsDodFBfmDDOZF",
+        "nUX4UWK0Tf1qh5zvFZWR",
+    ])
 
     # YouTube Yuki Stream API
     YUKI_API_KEY: str = os.getenv("YUKI_API_KEY", "").strip()

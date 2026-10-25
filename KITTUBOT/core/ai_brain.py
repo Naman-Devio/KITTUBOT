@@ -33,6 +33,16 @@ KITTU_SYSTEM_PROMPT = (
     "5. When reacting to photos or stickers, react bluntly and authentically like a real girl looking at her phone."
 )
 
+KITTU_VOICE_PROMPT_ADDON = (
+    "\n\nVOICE MODE ACTIVE: You are now replying via voice note (spoken audio). "
+    "Keep replies EXTREMELY short (5-12 words max), sound casual and spoken, "
+    "like you're recording a quick voice note on WhatsApp. "
+    "Use filler words naturally: 'haan', 'acha', 'dekh na', 'sun'. "
+    "Sound breathy and real, not robotic. NO emojis, NO kaomojis, NO [SEND_STICKER] in voice mode. "
+    "If someone asks you to say something specific for the owner, comply sweetly. "
+    "If someone else asks, be savage and witty in your rejection."
+)
+
 # Recent message history per session key: {session_key: [(role, content), ...]}
 USER_HISTORIES: dict[str, list[dict]] = {}
 LAST_ACTIVE: dict[str, float] = {}
@@ -251,3 +261,124 @@ async def ask_kittu(
 
     _record_history(sess_key, history_summary, clean_reply)
     return clean_reply, should_send_sticker
+
+
+async def ask_kittu_voice(
+    user_prompt: str,
+    user: User | None = None,
+    chat: Chat | None = None,
+    is_group: bool = False,
+    is_owner: bool = False,
+    custom_speech_text: str | None = None,
+) -> str:
+    """
+    Generates a voice-appropriate response from Kittu.
+    For custom speech requests: owner gets compliance, others get savage rejection.
+    Returns: reply_text (clean, spoken format, no sticker signals)
+    """
+    from KITTUBOT.core.voice_engine import get_savage_rejection, clean_text_for_speech
+
+    user_id = user.id if user else 0
+    chat_id = chat.id if chat else user_id
+    user_name = user.first_name if user else "Friend"
+    sess_key = f"gc_{chat_id}_u_{user_id}" if is_group else f"dm_{user_id}"
+
+    # Handle custom speech / imitation requests
+    if custom_speech_text is not None:
+        if not is_owner:
+            reply = get_savage_rejection()
+            _record_history(sess_key, user_prompt, reply)
+            return reply
+        else:
+            # If owner gave a direct quote like "good morning everyone", speak it directly
+            # If it's an instruction (e.g. "i love you hindi me"), let LLM generate the sweet spoken line
+            lower_custom = custom_speech_text.lower()
+            if not any(k in lower_custom for k in ("hindi me", "english me", "propose", "ily", "love you", "bol")):
+                cleaned_custom = clean_text_for_speech(custom_speech_text)
+                if cleaned_custom:
+                    _record_history(sess_key, user_prompt, cleaned_custom)
+                    return cleaned_custom
+
+    # Normal voice reply or owner instruction: use LLM with voice prompt
+    model_id, think_level = await get_model_pref(chat_id, user_id, is_group)
+    context_str = format_chat_context(chat, user, is_group)
+    owner_instruction = (
+        "\n[OWNER PRIVILEGE: The user chatting with you is your OWNER/CREATOR. Comply sweetly, warmly, and lovingly.]"
+        if is_owner
+        else ""
+    )
+    full_system = KITTU_SYSTEM_PROMPT + KITTU_VOICE_PROMPT_ADDON + owner_instruction + context_str
+
+    messages = _get_history(sess_key, full_system)
+    messages.append({"role": "user", "content": f"{user_name}: {user_prompt}"})
+
+    raw_reply = ""
+
+    # 1. Groq
+    if config.GROQ_API_KEY:
+        for model in [model_id, "llama-3.3-70b-versatile"]:
+            try:
+                async with httpx.AsyncClient(timeout=14.0) as client:
+                    res = await client.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {config.GROQ_API_KEY}",
+                            "Content-Type": "application/json",
+                        },
+                        json={"model": model, "messages": messages, "max_tokens": 80, "temperature": 0.85},
+                    )
+                    if res.status_code == 200:
+                        raw_reply = res.json()["choices"][0]["message"]["content"].strip()
+                        if raw_reply:
+                            break
+            except Exception:
+                pass
+
+    # 2. Mistral fallback
+    if not raw_reply and config.MISTRAL_API_KEY:
+        clean_text_messages = []
+        for m in messages:
+            if isinstance(m["content"], list):
+                text_part = next((p["text"] for p in m["content"] if p["type"] == "text"), "")
+                clean_text_messages.append({"role": m["role"], "content": text_part})
+            else:
+                clean_text_messages.append(m)
+
+        for model in ["mistral-small-latest", "open-mistral-7b"]:
+            try:
+                async with httpx.AsyncClient(timeout=12.0) as client:
+                    res = await client.post(
+                        "https://api.mistral.ai/v1/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {config.MISTRAL_API_KEY}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": model,
+                            "messages": clean_text_messages,
+                            "max_tokens": 80,
+                            "temperature": 0.8,
+                        },
+                    )
+                    if res.status_code == 200:
+                        raw_reply = res.json()["choices"][0]["message"]["content"].strip()
+                        if raw_reply:
+                            break
+            except Exception:
+                pass
+
+    # 3. Dynamic fallback
+    if not raw_reply:
+        if is_owner:
+            raw_reply = "haan bolo na sun rhi hu kya hua"
+        else:
+            raw_reply = f"haan sun rhi hu {user_name} bol na kya hua"
+
+    # Clean up for voice
+    clean_reply = clean_text_for_speech(raw_reply)
+    if not clean_reply:
+        clean_reply = sanitize_punctuation(raw_reply)
+    clean_reply = clean_reply.replace("[SEND_STICKER]", "").strip()
+
+    _record_history(sess_key, user_prompt, clean_reply)
+    return clean_reply if clean_reply else "hmm"

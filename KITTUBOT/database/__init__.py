@@ -37,6 +37,8 @@ rankings_col = db["chat_rankings"]
 stickers_col = db["stickers_pool"]
 automod_col = db["automod_settings"]
 user_models_col = db["user_models"]
+voice_cache_col = db["voice_cache"]
+voice_quota_col = db["voice_quota"]
 
 # Waifu Gacha Collections (from user's real waifu database)
 waifu_db = client[config.WAIFU_DB_NAME]
@@ -52,6 +54,8 @@ async def init_db():
         await couples_col.create_index([("chat_id", 1), ("date", 1)], unique=True)
         await rankings_col.create_index([("chat_id", 1), ("user_id", 1)], unique=True)
         await rankings_col.create_index([("points", -1)])
+        await voice_cache_col.create_index("text_hash", unique=True)
+        await voice_quota_col.create_index("month", unique=True)
         log.info("MongoDB indexes verified successfully.")
     except Exception as e:
         log.warning(f"Index creation note: {e}")

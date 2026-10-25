@@ -5,9 +5,11 @@
 """
 🐾 KITTUBOT Chatbot & AI Companion Plugin
 Expressive, Hinglish AI companion that talks naturally in DMs and group mentions,
-featuring conversational active memory windowing, media vision reactions, and sticker integration.
+featuring conversational active memory windowing, media vision reactions,
+sticker integration, and human-like voice note conversations.
 """
 
+import io
 import re
 import time
 import random
@@ -19,11 +21,20 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from KITTUBOT.core.ai_brain import ask_kittu
+from KITTUBOT.core.ai_brain import ask_kittu, ask_kittu_voice
 from KITTUBOT.core.media_processor import process_message_media
+from KITTUBOT.core.voice_engine import (
+    transcribe_voice,
+    generate_voice_note,
+    get_bored_line,
+    _detect_voice_request,
+    clean_text_for_speech,
+)
 from KITTUBOT.database.users import ensure_user
 from KITTUBOT.database.stickers import add_sticker, get_random_sticker
+from KITTUBOT.database.voice_cache import get_cached_voice, cache_voice, invalidate_cached_voice
 from KITTUBOT.core.ratelimit import check_rate_limit
+from KITTUBOT.config import config
 from KITTUBOT import log
 
 __mod_name__ = "Chatbot"
@@ -32,6 +43,7 @@ __help__ = """
 • Just talk naturally in DMs or mention <b>kittu</b> in groups!
 • <b>Active Window:</b> Once you talk to Kittu in a group, she remembers you for 60 seconds — no need to repeat @KittuBot on every text!
 • <b>Vision:</b> Send photos or stickers — Kittu can actually see and react to them!
+• <b>Voice Notes:</b> Send Kittu a voice note and she'll reply with her own voice! Ask her to say things too!
 • <b>Image Generation:</b> Say <i>"cat ki photo bana de"</i> or <code>/imagine [prompt]</code>
 • <code>/ask [query]</code> - Ask Kittu any direct question
 • <code>/clear</code> - Clear conversation memory for this chat</blockquote>
@@ -39,6 +51,9 @@ __help__ = """
 
 # Active conversational memory window per (chat_id, user_id): timestamp
 ACTIVE_WINDOWS: dict[tuple[int, int], float] = {}
+
+# Bored mode tracker per chat_id: (message_count, last_kittu_mention_time)
+BORED_TRACKER: dict[int, dict] = {}
 
 # Regex patterns for natural Hinglish image generation requests
 IMAGE_PROMPT_PATTERNS = [
@@ -111,6 +126,158 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("chat memory cleared! clean slate. what's up? ^_^")
 
 
+async def _send_voice_reply(
+    message,
+    text: str,
+    language: str = "hi",
+    chat_id: int | None = None,
+    bot=None,
+) -> bool:
+    """Generates and sends a voice note reply. Handles caching transparently."""
+    from KITTUBOT.core.voice_engine import _pick_voice_id
+
+    clean_text = clean_text_for_speech(text)
+    if not clean_text:
+        clean_text = text
+
+    voice_id = _pick_voice_id(language)
+
+    # 1. Check cache for existing Telegram file_id
+    cached_fid = await get_cached_voice(clean_text, voice_id)
+    if cached_fid:
+        try:
+            if message:
+                await message.reply_voice(voice=cached_fid)
+            elif bot and chat_id:
+                await bot.send_voice(chat_id=chat_id, voice=cached_fid)
+            log.info("[Chatbot] Voice reply sent from cache")
+            return True
+        except Exception as e:
+            log.warning(f"[Chatbot] Cached voice file_id expired or rejected, invalidating: {e}")
+            await invalidate_cached_voice(clean_text, voice_id)
+
+    # 2. Generate new voice note
+    ogg_data, used_voice_id = await generate_voice_note(clean_text, language=language, force_voice_id=voice_id)
+    if ogg_data:
+        voice_file = io.BytesIO(ogg_data)
+        voice_file.name = "kittu_voice.ogg"
+        try:
+            sent = None
+            if message:
+                sent = await message.reply_voice(voice=voice_file)
+            elif bot and chat_id:
+                sent = await bot.send_voice(chat_id=chat_id, voice=voice_file)
+
+            # Cache the file_id for reuse
+            if sent and sent.voice:
+                await cache_voice(clean_text, used_voice_id, sent.voice.file_id, language)
+            log.info(f"[Chatbot] Voice reply sent ({len(clean_text)} chars, lang={language})")
+            return True
+        except Exception as e:
+            log.warning(f"[Chatbot] Failed to send voice: {e}")
+    return False
+
+
+async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles incoming voice notes — transcribes, processes, and replies with voice."""
+    message = update.effective_message
+    if not message or not message.voice:
+        return
+
+    user = update.effective_user
+    chat = update.effective_chat
+    if not user or user.is_bot:
+        return
+
+    bot_info = await context.bot.get_me()
+    bot_id = bot_info.id
+    is_private = chat.type == "private"
+
+    # Determine if this voice note is directed at Kittu
+    is_reply_to_bot = False
+    if message.reply_to_message and message.reply_to_message.from_user:
+        is_reply_to_bot = message.reply_to_message.from_user.id == bot_id
+
+    caption = (message.caption or "").strip()
+    has_name_in_caption = bool(NAME_PATTERN.search(caption))
+
+    # Check active window
+    user_window_key = (chat.id, user.id)
+    now = time.time()
+    is_in_active_window = (now - ACTIVE_WINDOWS.get(user_window_key, 0)) <= 60.0
+
+    should_respond = is_private or is_reply_to_bot or has_name_in_caption or is_in_active_window
+
+    if not should_respond:
+        return
+
+    # Guard: Audio duration and size check (prevent dyno memory exhaustion)
+    if (message.voice.duration and message.voice.duration > 120) or (message.voice.file_size and message.voice.file_size > 8 * 1024 * 1024):
+        await message.reply_text("itna bada voice note mat bhej yaar, chhota sa bhej 1-2 min max ^_^")
+        return
+
+    # Refresh active window
+    ACTIVE_WINDOWS[user_window_key] = now
+    await ensure_user(user)
+
+    # Send "recording voice" action
+    try:
+        await context.bot.send_chat_action(chat_id=chat.id, action="record_voice")
+    except Exception:
+        pass
+
+    # Download and transcribe the voice note
+    try:
+        voice_file = await message.voice.get_file()
+        voice_bytes = await voice_file.download_as_bytearray()
+    except Exception as e:
+        log.warning(f"[Chatbot] Failed to download voice note: {e}")
+        await message.reply_text("voice note download nhi ho paya, wapas bhej na")
+        return
+
+    transcription = await transcribe_voice(bytes(voice_bytes))
+    if not transcription or not transcription.text:
+        # Could not transcribe, send a text fallback
+        await message.reply_text("voice note sun li pr kuch samjh nhi aaya tera network kharab h kya")
+        return
+
+    detected_lang = transcription.language
+    transcript_text = transcription.text
+    is_owner = user.id == config.OWNER_ID
+
+    log.info(f"[Chatbot] Voice transcribed: '{transcript_text[:80]}' lang={detected_lang} owner={is_owner}")
+
+    # Check if it's a "say this" / custom speech request
+    is_voice_req, requested_text = _detect_voice_request(transcript_text)
+    if not is_voice_req and caption:
+        is_voice_req, requested_text = _detect_voice_request(caption)
+
+    if is_voice_req:
+        # Generate custom speech response
+        voice_reply_text = await ask_kittu_voice(
+            user_prompt=transcript_text,
+            user=user,
+            chat=chat,
+            is_group=(not is_private),
+            is_owner=is_owner,
+            custom_speech_text=requested_text,
+        )
+    else:
+        # Generate normal conversational voice response
+        voice_reply_text = await ask_kittu_voice(
+            user_prompt=transcript_text,
+            user=user,
+            chat=chat,
+            is_group=(not is_private),
+            is_owner=is_owner,
+        )
+
+    if voice_reply_text:
+        success = await _send_voice_reply(message, voice_reply_text, language=detected_lang)
+        if not success:
+            await message.reply_text(voice_reply_text)
+
+
 async def handle_chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Master message listener with conversational active window and vision support."""
     message = update.effective_message
@@ -166,6 +333,24 @@ async def handle_chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_window_key = (chat.id, user.id)
     is_in_active_window = (now - ACTIVE_WINDOWS.get(user_window_key, 0)) <= 60.0
 
+    # Prune memory if dictionaries grow large
+    if len(ACTIVE_WINDOWS) > 300:
+        cutoff = now - 120.0
+        for k in [k for k, v in ACTIVE_WINDOWS.items() if v < cutoff]:
+            ACTIVE_WINDOWS.pop(k, None)
+
+    if len(BORED_TRACKER) > 300:
+        cutoff_b = now - 3600.0
+        for cid in [c for c, tr in BORED_TRACKER.items() if tr.get("last_mention", 0) < cutoff_b]:
+            BORED_TRACKER.pop(cid, None)
+
+    # Bored mode: Track group activity
+    if chat.type != "private":
+        tracker = BORED_TRACKER.setdefault(chat.id, {"msg_count": 0, "last_mention": time.time()})
+        tracker["msg_count"] += 1
+        if has_name or has_mention or is_reply_to_bot:
+            tracker["last_mention"] = now
+
     # Determine whether Kittu should respond
     should_respond = False
     prompt_to_feed = text_clean
@@ -186,7 +371,65 @@ async def handle_chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         # User is actively chatting with the bot in group and didn't reply to another person!
         should_respond = True
 
+    # Check for text-based voice request (e.g., "kittu bol ke bata i love you")
+    is_text_voice_req = False
+    requested_speech = None
+    if should_respond and text_clean and not message.photo and not message.sticker:
+        is_text_voice_req, requested_speech = _detect_voice_request(text_clean)
+
+    # Handle text-based voice request → generate voice note reply
+    if is_text_voice_req and should_respond:
+        ACTIVE_WINDOWS[user_window_key] = now
+        await ensure_user(user)
+        try:
+            await context.bot.send_chat_action(chat_id=chat.id, action="record_voice")
+        except Exception:
+            pass
+
+        is_owner = user.id == config.OWNER_ID
+        voice_text = await ask_kittu_voice(
+            user_prompt=text_clean,
+            user=user,
+            chat=chat,
+            is_group=(not is_private),
+            is_owner=is_owner,
+            custom_speech_text=requested_speech,
+        )
+        if voice_text:
+            # Detect language from text for voice selection
+            lang = "hi"  # Default Hinglish
+            if re.search(r"[a-zA-Z]{3,}", voice_text) and not re.search(r"[\u0900-\u097F]", voice_text):
+                lang = "en"
+            success = await _send_voice_reply(message, voice_text, language=lang)
+            if not success:
+                await message.reply_text(voice_text)
+        return
+
     if not should_respond:
+        # Bored mode check: Random spontaneous voice note in groups
+        if chat.type != "private":
+            tracker = BORED_TRACKER.get(chat.id, {})
+            msg_count = tracker.get("msg_count", 0)
+            last_mention = tracker.get("last_mention", now)
+            # After 50+ messages, no mention for 10+ min, 3% chance
+            if msg_count >= 50 and (now - last_mention) > 600 and random.random() < 0.03:
+                BORED_TRACKER[chat.id] = {"msg_count": 0, "last_mention": now}
+                bored_text = get_bored_line()
+                try:
+                    await context.bot.send_chat_action(chat_id=chat.id, action="record_voice")
+                    # Send unsolicited to chat directly, without quoting an innocent user's text
+                    success = await _send_voice_reply(
+                        message=None,
+                        text=bored_text,
+                        language="hi",
+                        chat_id=chat.id,
+                        bot=context.bot,
+                    )
+                    if not success:
+                        await context.bot.send_message(chat_id=chat.id, text=bored_text)
+                    log.info(f"[Chatbot] Bored mode voice sent in {chat.id}")
+                except Exception as e:
+                    log.warning(f"[Chatbot] Bored mode failed: {e}")
         return
 
     # Refresh active window timer for this user in this chat
@@ -245,6 +488,14 @@ async def handle_chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 def register_handlers(app: Application):
     app.add_handler(CommandHandler("ask", ask_command))
     app.add_handler(CommandHandler("clear", clear_command))
+    # Voice note handler (higher priority)
+    app.add_handler(
+        MessageHandler(
+            filters.VOICE & ~filters.COMMAND,
+            handle_voice_message,
+        ),
+        group=19,
+    )
     # Handles text, photos, and stickers for complete multimodal immersion
     app.add_handler(
         MessageHandler(
