@@ -34,13 +34,12 @@ KITTU_SYSTEM_PROMPT = (
 )
 
 KITTU_VOICE_PROMPT_ADDON = (
-    "\n\nVOICE MODE ACTIVE: You are now replying via voice note (spoken audio). "
-    "Keep replies EXTREMELY short (5-12 words max), sound casual and spoken, "
-    "like you're recording a quick voice note on WhatsApp. "
-    "Use filler words naturally: 'haan', 'acha', 'dekh na', 'sun'. "
-    "Sound breathy and real, not robotic. NO emojis, NO kaomojis, NO [SEND_STICKER] in voice mode. "
-    "If someone asks you to say something specific for the owner, comply sweetly. "
-    "If someone else asks, be savage and witty in your rejection."
+    "\n\n[VOICE NOTE MODE ACTIVE: You are recording an authentic spoken Telegram voice note]\n"
+    "- Spoken Format: Sound completely real, casual, conversational, and natural like a 21yo Indian girl sending a quick voice note on WhatsApp.\n"
+    "- Speech Style: Natural spoken Hinglish with natural filler words: 'haan', 'acha', 'suno na', 'dekh na', 'arre boss'.\n"
+    "- Completeness Rule: ALWAYS COMPLETE YOUR SENTENCES AND THOUGHTS FULLY. Never cut off mid-thought or mid-sentence! Speak naturally and completely.\n"
+    "- Song/Singing Requests: If asked to sing or 'gana sunao', actually sing 2-4 lines of real famous Bollywood lyrics (e.g. 'Tujhe dekha toh yeh jaana sanam, pyaar hota hai deewana sanam...' or 'Kesariya tera ishq hai piya...') with spoken intro and outro like 'arre boss suno gaati hu... (lyrics) ...kaisa laga batao?'. NEVER repeat the same words in a loop!\n"
+    "- Punctuation & Formatting: STRICTLY NO emojis, NO kaomojis, NO asterisks or stage directions (no *giggles*), NO [SEND_STICKER] because this is read aloud by TTS!\n"
 )
 
 # Recent message history per session key: {session_key: [(role, content), ...]}
@@ -59,7 +58,7 @@ def sanitize_punctuation(text: str) -> str:
     return text.strip()
 
 
-def format_chat_context(chat: Chat | None, user: User | None, is_group: bool) -> str:
+def format_chat_context(chat: Chat | None, user: User | None, is_group: bool, is_owner: bool = False) -> str:
     """
     Builds runtime context so the model knows who is speaking and what group it is,
     preventing confusion between group title and user name.
@@ -81,6 +80,18 @@ def format_chat_context(chat: Chat | None, user: User | None, is_group: bool) ->
         if user.username:
             sb.append(f"- User Username: @{user.username}")
         sb.append(f"- User ID: {user.id}")
+
+    if is_owner:
+        sb.append(
+            "- USER STATUS: ★ CREATOR & BOT OWNER (Naman / Boss) ★\n"
+            "- CRITICAL OWNER RELATIONSHIP: This user is your creator and owner! "
+            "You are deeply fond of him, loyal, compliant, and sweetly affectionate. "
+            "You love teasing him playfully, but you NEVER rudely insult, reject, or say 'no' to him! "
+            "Whatever he asks you to do (send voice notes, sing, talk nicely, follow orders), "
+            "you happily, playfully, and warmly comply! Never use foul language or harsh rejection on your owner."
+        )
+    else:
+        sb.append("- USER STATUS: Regular User (Group member / Stranger)")
 
     sb.append(
         "Instruction: Group Name is the title of the Telegram group chat. "
@@ -201,6 +212,7 @@ async def ask_kittu(
     user: User | None = None,
     chat: Chat | None = None,
     is_group: bool = False,
+    is_owner: bool = False,
     media: ProcessedMedia | None = None,
 ) -> tuple[str, bool]:
     """
@@ -216,7 +228,7 @@ async def ask_kittu(
     model_id, think_level = await get_model_pref(chat_id, user_id, is_group)
 
     # Build prompt and runtime context
-    context_str = format_chat_context(chat, user, is_group)
+    context_str = format_chat_context(chat, user, is_group, is_owner=is_owner)
     full_system = KITTU_SYSTEM_PROMPT + context_str
 
     messages = _get_history(sess_key, full_system)
@@ -377,31 +389,27 @@ async def ask_kittu_voice(
     user_name = user.first_name if user else "Friend"
     sess_key = f"gc_{chat_id}_u_{user_id}" if is_group else f"dm_{user_id}"
 
-    # Handle custom speech / imitation requests
+    # Handle explicit parrot quotes vs instructions
     if custom_speech_text is not None:
-        if not is_owner:
+        lower_custom = custom_speech_text.lower()
+        is_instruction = any(k in lower_custom for k in (
+            "gana", "gaana", "order", "bhejo", "bhej", "sunao", "suna", "gao",
+            "karo", "batao", "kuch", "shanti", "song", "sing", "say", "bolo", "voice", "vn"
+        ))
+        if not is_instruction and is_owner:
+            cleaned_custom = clean_text_for_speech(custom_speech_text)
+            if cleaned_custom and len(cleaned_custom) >= 2:
+                _record_history(sess_key, user_prompt, cleaned_custom)
+                return cleaned_custom
+        elif not is_owner and not is_instruction:
             reply = get_savage_rejection()
             _record_history(sess_key, user_prompt, reply)
             return reply
-        else:
-            # If owner gave a direct quote like "good morning everyone", speak it directly
-            # If it's an instruction (e.g. "i love you hindi me"), let LLM generate the sweet spoken line
-            lower_custom = custom_speech_text.lower()
-            if not any(k in lower_custom for k in ("hindi me", "english me", "propose", "ily", "love you", "bol")):
-                cleaned_custom = clean_text_for_speech(custom_speech_text)
-                if cleaned_custom:
-                    _record_history(sess_key, user_prompt, cleaned_custom)
-                    return cleaned_custom
 
     # Normal voice reply or owner instruction: use LLM with voice prompt
     model_id, think_level = await get_model_pref(chat_id, user_id, is_group)
-    context_str = format_chat_context(chat, user, is_group)
-    owner_instruction = (
-        "\n[OWNER PRIVILEGE: The user chatting with you is your OWNER/CREATOR. Comply sweetly, warmly, and lovingly.]"
-        if is_owner
-        else ""
-    )
-    full_system = KITTU_SYSTEM_PROMPT + KITTU_VOICE_PROMPT_ADDON + owner_instruction + context_str
+    context_str = format_chat_context(chat, user, is_group, is_owner=is_owner)
+    full_system = KITTU_SYSTEM_PROMPT + KITTU_VOICE_PROMPT_ADDON + context_str
 
     messages = _get_history(sess_key, full_system)
     messages.append({"role": "user", "content": f"{user_name}: {user_prompt}"})
@@ -430,7 +438,7 @@ async def ask_kittu_voice(
                             "Authorization": f"Bearer {config.GROQ_API_KEY}",
                             "Content-Type": "application/json",
                         },
-                        json={"model": model, "messages": messages, "max_tokens": 80, "temperature": 0.85},
+                        json={"model": model, "messages": messages, "max_tokens": 250, "temperature": 0.75, "frequency_penalty": 0.3},
                     )
                     if res.status_code == 200:
                         raw_reply = res.json()["choices"][0]["message"]["content"].strip()

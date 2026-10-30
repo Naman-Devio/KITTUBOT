@@ -15,6 +15,7 @@ import random
 import asyncio
 import subprocess
 import httpx
+import base64
 from dataclasses import dataclass
 from KITTUBOT.config import config
 from KITTUBOT.database.voice_cache import (
@@ -100,47 +101,61 @@ def clean_text_for_speech(text: str) -> str:
 
 def _detect_voice_request(text: str) -> tuple[bool, str | None]:
     """
-    Detects if the user is asking Kittu to speak/say something specific.
-    Returns (is_voice_request, requested_text_or_None).
+    Detects if the user is asking Kittu for a voice note or to say something.
+    Returns (is_voice_request, explicit_quote_or_None).
     """
-    patterns = [
-        # 1. 'kittu [meko/mujhe/merko]? [yeh/ye]? bolkr/bol ke/bol kar bata/batao/suna/sunao/de/do <something>'
-        re.compile(
-            r"(?i)(?:kittu|kitu|billu)\s+(?:meko|mujhe|merko)?\s*(?:ye|yeh)?\s*(?:bol\s*(?:kr|ke|kar)?\s*(?:bata|batao|suna|sunao|de|do))\s+(.+)",
-            re.DOTALL,
-        ),
-        # 2. 'voice me bol/bata/suna/bhej <something>' or 'vn me ...'
-        re.compile(
-            r"(?i)(?:voice\s*(?:me|mein|mai)?|vn\s*(?:me|mein)?)\s+(?:bol|bata|suna|bhej)\s+(.+)",
-            re.DOTALL,
-        ),
-        # 3. 'kittu ye/yeh bol de/do/na <something>' (strictly requiring ye/yeh so 'kittu bol na' doesn't match!)
-        re.compile(
-            r"(?i)(?:kittu|kitu)\s+(?:ye|yeh)\s+(?:bol\s*(?:de|do|na)|bata\s*(?:de|do)?|suna\s*(?:de|do)?)\s+(.+)",
-            re.DOTALL,
-        ),
-        # 4. Propose / I love you requests: 'kittu [meko/mujhe]? propose kar/karo/kardo'
-        re.compile(
-            r"(?i)(?:kittu|kitu)?\s*(?:meko|mujhe|merko)?\s*(?:propose\s+(?:kar\s*do|kardo|kr\s*do|kar|karo)|say\s+(?:i\s+love\s+you|ily)|i\s+love\s+you\s+(?:bol|bolo|bol\s*de|bol\s*do))\s*(?:voice\s*(?:me|mein)?)?",
-            re.DOTALL,
-        ),
+    if not text:
+        return False, None
+
+    lower = text.lower().strip()
+
+    # 1. Explicit quote to repeat / parrot:
+    # Matches: 'kittu ye bol: "hello world"' or 'kittu ye bol: hello world'
+    quote_pat = re.compile(
+        r"""(?i)(?:kittu|kitu|billu)?\s*(?:ye|yeh)\s*(?:bol|bolo|bol\s*de|bol\s*do|bata|batao)\s*[:"']\s*(.+?)["']?$""",
+        re.DOTALL
+    )
+    m = quote_pat.search(text)
+    if m:
+        extracted = m.group(1).strip()
+        # Ensure it is a genuine quote to parrot, NOT an instruction like 'gana sunao' or 'order hai'
+        instruction_words = (
+            "gana", "gaana", "order", "bhejo", "bhej", "sunao", "suna", "gao",
+            "karo", "batao", "kuch", "shanti", "song", "sing", "say", "voice", "vn"
+        )
+        if extracted and not any(w in extracted.lower() for w in instruction_words):
+            return True, extracted
+
+    # 2. General Voice & Speech Triggers
+    triggers = [
+        # Voice note / message keywords
+        "voice message", "voice msg", "voice note", "voice bhejo", "voice bhej", "voice send",
+        "vn bhejo", "vn bhej", "vn send", "audio bhejo", "audio bhej",
+        "voice me", "voice mein", "voice mai", "vn me", "vn mein",
+        # Spoken request keywords
+        "bol ke", "bol kar", "bolke", "bolkar", "bol de na", "bol do na", "bol do", "bol de",
+        "bol na voice", "bolo na voice", "bol ke suna", "bol ke sunao", "bolke suna", "bolke sunao",
+        # Awaz / Voice appreciation
+        "awaz sunao", "awaaz sunao", "awaz suna", "awaaz suna",
+        "awaz sunni", "awaaz sunni", "awaz sunna", "awaaz sunna",
+        "apni awaz", "apni awaaz", "awaz sunau", "awaaz sunau",
+        # Singing / Song keywords
+        "gana sunao", "gaana sunao", "gana gao", "gaana gao", "gana suna", "gaana suna",
+        "gaana suna de", "gana suna do", "gana suna na", "gaana suna na",
+        "sing a song", "sing for me", "sing song", "singing",
+        # English voice keywords
+        "send voice", "send me voice", "send me a voice", "send voice note", "send voice message",
+        "speak in voice", "talk in voice", "send audio", "voice call",
+        # Relationship / Propose in voice
+        "propose kar", "propose karo", "propose kardo", "propose kr",
+        "i love you bol", "ily bol",
     ]
 
-    for pat in patterns:
-        m = pat.search(text)
-        if m:
-            requested = m.group(1).strip() if m.lastindex and m.lastindex >= 1 else None
-            return True, requested
-
-    # Keyword check for general requests to speak in voice
-    lower = text.lower()
-    voice_keywords = ["voice me bol", "vn bhej", "voice note bhej", "awaaz sunu", "bol ke suna", "voice me bata"]
-    for kw in voice_keywords:
-        if kw in lower:
+    for trig in triggers:
+        if trig in lower:
             return True, None
 
     return False, None
-
 
 detect_voice_request = _detect_voice_request
 
@@ -322,27 +337,139 @@ async def generate_voice_note(
     """
     Generates a voice note from text. Returns (ogg_bytes, voice_id_used).
     Cleans text for speech (removes emojis, kaomojis, actions) before TTS.
-    Uses ElevenLabs (primary) with Google TTS fallback.
+    Uses Sarvam AI Bulbul (primary for Indian Hindi/Hinglish),
+    then ElevenLabs, with Google TTS fallback.
     """
     clean_text = clean_text_for_speech(text)
     if not clean_text:
         return None, ""
 
+    # 1. Primary: Sarvam AI Bulbul (Expressive, natural Indian Hindi/Hinglish)
+    if config.SARVAM_API_KEY:
+        ogg_data = await _tts_sarvam(
+            clean_text,
+            speaker=config.SARVAM_SPEAKER or "simran_enhi_companion",
+            model=config.SARVAM_MODEL or "bulbul:v4-flash",
+        )
+        if ogg_data:
+            return ogg_data, f"sarvam:{config.SARVAM_SPEAKER}"
+
+    # 2. Secondary: Rumik AI Silk TTS (Direct Opus, expressive voice)
+    if config.RUMIK_API_KEY:
+        ogg_data = await _tts_rumik(clean_text, model=config.RUMIK_MODEL or "mulberry")
+        if ogg_data:
+            return ogg_data, f"rumik:{config.RUMIK_MODEL}"
+
     voice_id = force_voice_id or _pick_voice_id(language)
 
-    # Primary: ElevenLabs
+    # 3. Tertiary: ElevenLabs
     if config.ELEVENLABS_API_KEY and await is_quota_available(len(clean_text)):
         ogg_data = await _tts_elevenlabs(clean_text, voice_id)
         if ogg_data:
             await add_chars_used(len(clean_text))
             return ogg_data, voice_id
 
-    # Fallback: Google TTS
+    # 4. Fallback: Google TTS
     ogg_data = await _tts_google(clean_text, language)
     if ogg_data:
         return ogg_data, voice_id
 
     return None, voice_id
+
+
+async def _tts_sarvam(
+    text: str,
+    speaker: str = "simran_enhi_companion",
+    model: str = "bulbul:v4-flash",
+) -> bytes | None:
+    """Generates natural Indian voice audio via Sarvam AI Bulbul TTS."""
+    api_key = config.SARVAM_API_KEY
+    if not api_key:
+        return None
+
+    text_to_speak = text[:500] if len(text) > 500 else text
+    url = "https://api.sarvam.ai/text-to-speech"
+    headers = {
+        "api-subscription-key": api_key,
+        "Content-Type": "application/json",
+    }
+
+    candidates = [
+        (model, speaker),
+        ("bulbul:v3", "simran"),
+        ("bulbul:v3", "kavya"),
+    ]
+
+    for m, spk in candidates:
+        payload = {
+            "inputs": [text_to_speak],
+            "target_language_code": "hi-IN",
+            "speaker": spk,
+            "model": m,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                res = await client.post(url, headers=headers, json=payload)
+                if res.status_code == 200:
+                    data = res.json()
+                    audios = data.get("audios", [])
+                    if audios:
+                        wav_bytes = base64.b64decode(audios[0])
+                        ogg_bytes = await convert_mp3_to_ogg(wav_bytes)
+                        if ogg_bytes:
+                            log.info(f"[VoiceEngine] Sarvam Bulbul TTS OK ({len(text)} chars, model={m}, speaker={spk})")
+                            return ogg_bytes
+                        log.info(f"[VoiceEngine] Sarvam Bulbul TTS OK (raw WAV, {len(text)} chars)")
+                        return wav_bytes
+                else:
+                    log.warning(f"[VoiceEngine] Sarvam TTS ({m}/{spk}) → {res.status_code}: {res.text[:150]}")
+        except Exception as e:
+            log.warning(f"[VoiceEngine] Sarvam TTS error ({m}/{spk}): {e}")
+
+    return None
+
+
+async def _tts_rumik(
+    text: str,
+    model: str = "mulberry",
+) -> bytes | None:
+    """Generates expressive voice audio via Rumik AI Silk TTS in native Opus format."""
+    api_key = config.RUMIK_API_KEY
+    if not api_key:
+        return None
+
+    url = "https://silk-api.rumik.ai/v1/tts"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    if model == "muga":
+        payload = {
+            "model": "muga",
+            "text": f"[cheerful] {text[:500]}",
+            "audio_format": "opus",
+        }
+    else:
+        payload = {
+            "model": "mulberry",
+            "text": text[:500],
+            "description": "Young cheerful Indian girl speaking sweet casual Hindi",
+            "audio_format": "opus",
+        }
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            res = await client.post(url, headers=headers, json=payload)
+            if res.status_code == 200 and len(res.content) > 500:
+                log.info(f"[VoiceEngine] Rumik Silk TTS OK ({len(text)} chars, model={model})")
+                return res.content
+            else:
+                log.warning(f"[VoiceEngine] Rumik TTS → {res.status_code}: {res.text[:150]}")
+    except Exception as e:
+        log.warning(f"[VoiceEngine] Rumik TTS error: {e}")
+
+    return None
 
 
 async def _tts_elevenlabs(text: str, voice_id: str) -> bytes | None:

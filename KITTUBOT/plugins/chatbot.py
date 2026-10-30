@@ -96,8 +96,9 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
+    is_owner = (user.id == config.OWNER_ID) or (user.id in config.SUDO_IDS)
     reply_text, should_sticker = await ask_kittu(
-        query, user=user, chat=chat, is_group=(chat.type != "private")
+        query, user=user, chat=chat, is_group=(chat.type != "private"), is_owner=is_owner
     )
     await update.message.reply_text(reply_text)
     if should_sticker:
@@ -244,7 +245,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
     detected_lang = transcription.language
     transcript_text = transcription.text
-    is_owner = user.id == config.OWNER_ID
+    is_owner = (user.id == config.OWNER_ID) or (user.id in config.SUDO_IDS)
 
     log.info(f"[Chatbot] Voice transcribed: '{transcript_text[:80]}' lang={detected_lang} owner={is_owner}")
 
@@ -387,7 +388,7 @@ async def handle_chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception:
             pass
 
-        is_owner = user.id == config.OWNER_ID
+        is_owner = (user.id == config.OWNER_ID) or (user.id in config.SUDO_IDS)
         voice_text = await ask_kittu_voice(
             user_prompt=text_clean,
             user=user,
@@ -457,11 +458,13 @@ async def handle_chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         pass
 
     # 6. Generate AI response
+    is_owner = (user.id == config.OWNER_ID) or (user.id in config.SUDO_IDS)
     reply_text, should_send_sticker = await ask_kittu(
         user_prompt=prompt_to_feed,
         user=user,
         chat=chat,
         is_group=(not is_private),
+        is_owner=is_owner,
         media=proc_media,
     )
 

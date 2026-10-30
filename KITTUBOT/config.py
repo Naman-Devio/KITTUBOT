@@ -89,7 +89,12 @@ class Config:
     MISTRAL_API_KEY: str = os.getenv("MISTRAL_API_KEY", "").strip()
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "").strip()
 
-    # Voice Companion (ElevenLabs TTS)
+    # Voice Companion (Sarvam AI, Rumik AI & ElevenLabs TTS)
+    SARVAM_API_KEY: str = os.getenv("SARVAM_API_KEY", "").strip()
+    SARVAM_SPEAKER: str = os.getenv("SARVAM_SPEAKER", "simran_enhi_companion").strip()
+    SARVAM_MODEL: str = os.getenv("SARVAM_MODEL", "bulbul:v4-flash").strip()
+    RUMIK_API_KEY: str = os.getenv("RUMIK_API_KEY", "").strip()
+    RUMIK_MODEL: str = os.getenv("RUMIK_MODEL", "mulberry").strip()
     ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "").strip()
     ELEVENLABS_VOICE_IDS: list[str] = _get_list("ELEVENLABS_VOICE_IDS", [
         "cgSgspJ2msm6clMCkdW9",

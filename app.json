@@ -81,6 +81,14 @@
       "description": "Google Gemini API Key for multimodal vision and fallback inference",
       "required": false
     },
+    "SARVAM_API_KEY": {
+      "description": "Sarvam AI API Key for natural Indian Hindi/Hinglish Text-to-Speech",
+      "required": false
+    },
+    "RUMIK_API_KEY": {
+      "description": "Rumik AI Silk API Key for fast expressive Opus Text-to-Speech",
+      "required": false
+    },
     "SUPPORT_CHAT_LINK": {
       "description": "Your Telegram support group invite link",
       "value": "https://t.me/+cWCtXiDOgIxlZWQ1",
