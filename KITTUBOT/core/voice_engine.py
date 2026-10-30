@@ -102,11 +102,7 @@ def clean_text_for_speech(text: str) -> str:
 def _detect_voice_request(text: str) -> tuple[bool, str | None]:
     """
     Detects if the user is asking Kittu for a voice note or to say something.
-
     Returns (is_voice_request, directive_context_or_None).
-    - directive_context: A structured context string extracted from the request,
-      which tells ask_kittu_voice WHAT to do (sing, say ily to X, etc.)
-      so the LLM gets a clean, pre-parsed instruction instead of raw user text.
     """
     if not text:
         return False, None
@@ -114,7 +110,6 @@ def _detect_voice_request(text: str) -> tuple[bool, str | None]:
     lower = text.lower().strip()
 
     # ── 1. Literal parrot quote: 'kittu ye bol: "hello world"'
-    # Only match if it looks like a real quoted string, not an instruction
     quote_pat = re.compile(
         r"""(?i)(?:kittu|kitu|billu)?\s*(?:ye|yeh)\s*(?:bol|bolo|bol\s*de|bol\s*do|bata|batao)\s*[:"']\s*(.+?)["']?$""",
         re.DOTALL,
@@ -130,7 +125,6 @@ def _detect_voice_request(text: str) -> tuple[bool, str | None]:
             return True, f"[PARROT] {extracted}"
 
     # ── 2. Third-party message: '[name] ko [message] bol de'
-    # "apne anshu ko pyar se ily bolde", "Rahul ko bol de main usse pyar karti hu"
     third_party_pat = re.compile(
         r"""(?i)(?:apne?\s+|mere?\s+)?(\w+)\s+ko\s+(.+?)\s+(?:bol\s*de|bol\s*do|bol\s*do|keh\s*de|keh\s*do|bolde|kardo|bolo)""",
         re.DOTALL,
@@ -139,38 +133,46 @@ def _detect_voice_request(text: str) -> tuple[bool, str | None]:
     if m2:
         target_name = m2.group(1).strip().title()
         message_intent = m2.group(2).strip()
-        # Filter out non-person triggers
         non_person_words = ("voice", "gana", "song", "kuch", "mujhe", "meko", "yeh", "ye", "woh")
         if target_name.lower() not in non_person_words:
             return True, f"[TELL:{target_name}] {message_intent}"
 
-    # ── 3. General Voice & Speech Triggers
-    triggers = [
-        # Voice note / message keywords
+    # ── 3. High-Priority Regex Voice Triggers ────────────────────────────
+    # Direct voice note requests: "voice note bhej pagal", "vn send kar", "audio bhej"
+    if re.search(r"\b(?:voice|vn|audio)\s*(?:note|msg|message)?\s*(?:bhej|bhejo|send|de|do|karo|kr)\b", lower):
+        return True, None
+
+    # Spoken actions: "bolkr bata", "bolke suna", "bol kar batao", "bol de na"
+    if re.search(r"\bbol\s*(?:kr|kar|ke|k)?\s*(?:bata|bta|suna|batao|btao|sunao|de|do|na)\b", lower):
+        return True, None
+
+    # Complaints about texting instead of speaking: "bolkr kyu nahi bata rahi text bhej rahi bas"
+    if re.search(r"\bbol\s*(?:kr|kar|ke|k)\b", lower) and re.search(r"\b(?:kyu|kyuu|naa|nhi|nahi|text)\b", lower):
+        return True, None
+
+    # Wanting to hear voice/ily: "ily sunna terse", "awaz sunni hai", "gana sunna hai"
+    if re.search(r"\b(?:sunna|sunni|sunne)\b", lower) and any(w in lower for w in ("ily", "pyar", "awaz", "awaaz", "gana", "song", "terse", "tumse", "voice", "audio")):
+        return True, None
+
+    # Singing requests: "gana sunao", "gana gao", "sing a song"
+    if re.search(r"\b(?:gana|gaana|song)\s*(?:suna|sunao|gao|bhejo|bhej|gaa|sunaye|gaaye)\b", lower) or re.search(r"\b(?:sing|singing)\b", lower):
+        return True, None
+
+    # Propose / I love you in voice: "propose kar na", "ily bol", "i love you bol"
+    if re.search(r"\b(?:propose|i\s*love\s*you|ily)\s*(?:kar|karo|kardo|kr|bol|bolo|bolde|kardena)\b", lower):
+        return True, None
+
+    # ── 4. General Keyword Fallback Triggers ─────────────────────────────
+    keywords = [
         "voice message", "voice msg", "voice note", "voice bhejo", "voice bhej", "voice send",
         "vn bhejo", "vn bhej", "vn send", "audio bhejo", "audio bhej",
         "voice me", "voice mein", "voice mai", "vn me", "vn mein",
-        # Spoken request keywords
-        "bol ke", "bol kar", "bolke", "bolkar", "bol de na", "bol do na", "bol do", "bol de",
-        "bol na voice", "bolo na voice", "bol ke suna", "bol ke sunao", "bolke suna", "bolke sunao",
-        # Awaz / Voice
         "awaz sunao", "awaaz sunao", "awaz suna", "awaaz suna",
-        "awaz sunni", "awaaz sunni", "awaz sunna", "awaaz sunna",
-        "apni awaz", "apni awaaz", "awaz sunau", "awaaz sunau",
-        # Singing / Song
-        "gana sunao", "gaana sunao", "gana gao", "gaana gao", "gana suna", "gaana suna",
-        "gaana suna de", "gana suna do", "gana suna na", "gaana suna na",
-        "sing a song", "sing for me", "sing song", "singing",
-        # English voice
-        "send voice", "send me voice", "send me a voice", "send voice note", "send voice message",
-        "speak in voice", "talk in voice", "send audio",
-        # Propose / ily
-        "propose kar", "propose karo", "propose kardo", "propose kr",
-        "i love you bol", "ily bol",
+        "awaz sunni", "awaaz sunni", "apni awaz", "apni awaaz",
+        "send voice", "send audio", "voice call",
     ]
-
-    for trig in triggers:
-        if trig in lower:
+    for kw in keywords:
+        if kw in lower:
             return True, None
 
     return False, None
