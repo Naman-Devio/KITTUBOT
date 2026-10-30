@@ -113,6 +113,89 @@ def _record_history(sess_key: str, user_content: str, assistant_reply: str):
         USER_HISTORIES[sess_key] = history[-16:]
 
 
+
+async def _ask_gemini(
+    messages: list[dict],
+    system_prompt: str,
+    media: ProcessedMedia | None = None,
+    model: str = "gemini-3.5-flash-lite",
+) -> str:
+    """Invokes Google Gemini API with multimodal vision support and structured context."""
+    if not config.GEMINI_API_KEY:
+        return ""
+
+    contents = []
+    for m in messages:
+        if m.get("role") == "system":
+            continue
+        role = "model" if m.get("role") == "assistant" else "user"
+        content = m.get("content", "")
+        parts = []
+
+        if isinstance(content, list):
+            for part in content:
+                if part.get("type") == "text":
+                    parts.append({"text": part.get("text", "")})
+        elif isinstance(content, str) and content.strip():
+            parts.append({"text": content})
+
+        if parts:
+            contents.append({"role": role, "parts": parts})
+
+    if not contents:
+        return ""
+
+    # Attach image for multimodal vision
+    if media and media.base64_data_url and contents:
+        try:
+            b64_raw = media.base64_data_url.split(",", 1)[-1]
+            if contents[-1]["role"] == "user":
+                contents[-1]["parts"].append({
+                    "inline_data": {
+                        "mime_type": "image/jpeg",
+                        "data": b64_raw,
+                    }
+                })
+        except Exception as e:
+            log.warning(f"[AIBrain] Error attaching media to Gemini: {e}")
+
+    candidate_models = [model] if "gemini" in model else []
+    for m in ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.1-flash-lite"]:
+        if m not in candidate_models:
+            candidate_models.append(m)
+
+    payload = {
+        "contents": contents,
+        "generationConfig": {
+            "maxOutputTokens": 800,
+            "temperature": 0.85,
+        },
+    }
+    if system_prompt:
+        payload["system_instruction"] = {
+            "parts": [{"text": system_prompt}]
+        }
+
+    for mdl in candidate_models:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{mdl}:generateContent?key={config.GEMINI_API_KEY}"
+            async with httpx.AsyncClient(timeout=14.0) as client:
+                res = await client.post(url, json=payload)
+                if res.status_code == 200:
+                    data = res.json()
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
+                        if text:
+                            return text
+                else:
+                    log.warning(f"[AIBrain] Gemini model '{mdl}' status {res.status_code}: {res.text[:100]}")
+        except Exception as e:
+            log.warning(f"[AIBrain] Gemini error on '{mdl}': {e}")
+
+    return ""
+
 async def ask_kittu(
     user_prompt: str,
     user: User | None = None,
@@ -164,15 +247,22 @@ async def ask_kittu(
 
     raw_reply = ""
 
-    # 1. Groq Inference (Ultra-fast)
-    if config.GROQ_API_KEY:
-        # Determine candidate models for Groq
-        groq_candidates = [model_id] if "groq" in model_id or "llama" in model_id or "qwen" in model_id else []
-        groq_candidates.extend(["llama-3.3-70b-versatile", "qwen/qwen3.8-27b", "openai/gpt-oss-120b"])
+    # Primary Vision: If photo or sticker is provided, Gemini handles multimodal perception
+    if media and media.base64_data_url and config.GEMINI_API_KEY:
+        raw_reply = await _ask_gemini(messages, full_system, media=media, model="gemini-3.5-flash")
 
-        # Vision handling on Groq
-        if media and media.base64_data_url:
-            groq_candidates = ["llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview"] + groq_candidates
+    # If Gemini explicitly chosen
+    if not raw_reply and "gemini" in model_id and config.GEMINI_API_KEY:
+        raw_reply = await _ask_gemini(messages, full_system, media=media, model=model_id)
+
+    # 1. Groq Inference (Ultra-fast for text)
+    if not raw_reply and config.GROQ_API_KEY:
+        groq_candidates = []
+        if model_id and "gemini" not in model_id:
+            groq_candidates.append(model_id)
+        for cand in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "llama-3.3-70b-versatile"]:
+            if cand not in groq_candidates:
+                groq_candidates.append(cand)
 
         for model in groq_candidates:
             try:
@@ -200,7 +290,11 @@ async def ask_kittu(
             except Exception as e:
                 log.warning(f"[AIBrain] Groq error on '{model}': {e}")
 
-    # 2. Mistral AI Fallback (if Groq fails or no key)
+    # 2. Gemini Fallback (if Groq fails or no key)
+    if not raw_reply and config.GEMINI_API_KEY:
+        raw_reply = await _ask_gemini(messages, full_system, media=media, model="gemini-3.5-flash-lite")
+
+    # 3. Mistral AI Fallback (if Groq and Gemini fail or no key)
     if not raw_reply and config.MISTRAL_API_KEY:
         # Mistral does not take image_url in text format easily, fallback to textual representation
         clean_text_messages = []
@@ -240,7 +334,7 @@ async def ask_kittu(
         fallbacks = [
             f"kya bol rha h {user_name} thoda seedha bol na lol",
             f"acha ji {user_name} sab samajh rhi hu baad me mat bolna maine warn nhi kiya ^_^",
-            f"dimag me thoda lag aa gaya tha ek bar wapas bol dY~-",
+            f"dimag me thoda lag aa gaya tha ek bar wapas bol ^_^",
             f"hn bol na sun rhi hu kya scene h",
         ]
         raw_reply = fallbacks[hash(user_prompt) % len(fallbacks)]
@@ -314,9 +408,20 @@ async def ask_kittu_voice(
 
     raw_reply = ""
 
+    # If Gemini explicitly chosen
+    if "gemini" in model_id and config.GEMINI_API_KEY:
+        raw_reply = await _ask_gemini(messages, full_system, model=model_id)
+
     # 1. Groq
-    if config.GROQ_API_KEY:
-        for model in [model_id, "llama-3.3-70b-versatile"]:
+    if not raw_reply and config.GROQ_API_KEY:
+        groq_voice_models = []
+        if model_id and "gemini" not in model_id:
+            groq_voice_models.append(model_id)
+        for cand in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "llama-3.3-70b-versatile"]:
+            if cand not in groq_voice_models:
+                groq_voice_models.append(cand)
+
+        for model in groq_voice_models:
             try:
                 async with httpx.AsyncClient(timeout=14.0) as client:
                     res = await client.post(
@@ -334,7 +439,11 @@ async def ask_kittu_voice(
             except Exception:
                 pass
 
-    # 2. Mistral fallback
+    # 2. Gemini fallback
+    if not raw_reply and config.GEMINI_API_KEY:
+        raw_reply = await _ask_gemini(messages, full_system, model="gemini-3.5-flash-lite")
+
+    # 3. Mistral fallback
     if not raw_reply and config.MISTRAL_API_KEY:
         clean_text_messages = []
         for m in messages:

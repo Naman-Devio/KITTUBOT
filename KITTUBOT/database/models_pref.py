@@ -10,7 +10,7 @@ Stores per-user and per-chat model selection and reasoning depth.
 from KITTUBOT.database import user_models_col
 from KITTUBOT import log
 
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "qwen/qwen3.8-27b"
 DEFAULT_THINK = "low"
 
 # In-memory cache for fast lookups

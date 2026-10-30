@@ -160,7 +160,8 @@ async def _send_voice_reply(
     ogg_data, used_voice_id = await generate_voice_note(clean_text, language=language, force_voice_id=voice_id)
     if ogg_data:
         voice_file = io.BytesIO(ogg_data)
-        voice_file.name = "kittu_voice.ogg"
+        ext = "ogg" if ogg_data.startswith(b"OggS") else "mp3"
+        voice_file.name = f"kittu_voice.{ext}"
         try:
             sent = None
             if message:

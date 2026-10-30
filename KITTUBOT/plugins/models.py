@@ -33,11 +33,12 @@ class ModelItem:
 
 
 MODEL_CATALOG: list[ModelItem] = [
+    ModelItem("qwen/qwen3.8-27b", "Qwen 3.8 27B (Groq)", "Smart Natural Dialogue (Active)"),
+    ModelItem("gemini-3.5-flash", "Gemini 3.5 Flash", "Multimodal Vision & Fast Intellect"),
+    ModelItem("gemini-3.5-flash-lite", "Gemini 3.5 Lite", "Ultra-Low Latency Conversational"),
+    ModelItem("openai/gpt-oss-120b", "GPT-OSS 120B (Groq)", "Frontier High Capacity Reasoning"),
     ModelItem("llama-3.3-70b-versatile", "Llama 3.3 70B (Groq)", "Ultra-Fast Groq Inference"),
     ModelItem("deepseek-r1-distill-llama-70b", "DeepSeek R1 (Groq)", "Deep Reasoning & Logic"),
-    ModelItem("qwen/qwen3.8-27b", "Qwen 3.8 27B", "Smart Natural Dialogue"),
-    ModelItem("openai/gpt-oss-120b", "GPT-OSS 120B", "Frontier High Capacity"),
-    ModelItem("gemini-2.0-flash", "Gemini 2.0 Flash", "Multimodal Flash Vision"),
     ModelItem("mistral-small-latest", "Mistral Small", "Fast & Coherent"),
     ModelItem("gpt-4o-mini", "OpenAI GPT-4o Mini", "Frontier Conversational"),
     ModelItem("open-mistral-7b", "Mistral 7B", "Lightweight Fallback"),

@@ -18,6 +18,9 @@
   "stack": "heroku-22",
   "buildpacks": [
     {
+      "url": "heroku-community/apt"
+    },
+    {
       "url": "heroku/python"
     }
   ],
@@ -72,6 +75,10 @@
     },
     "GROQ_API_KEY": {
       "description": "Groq Cloud API Key for AI companion conversations",
+      "required": false
+    },
+    "GEMINI_API_KEY": {
+      "description": "Google Gemini API Key for multimodal vision and fallback inference",
       "required": false
     },
     "SUPPORT_CHAT_LINK": {

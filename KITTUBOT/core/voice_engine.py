@@ -35,11 +35,12 @@ class TranscriptionResult:
 
 
 # ─── Voice ID Pools (language → list of ElevenLabs voice IDs) ───
+# Uses verified premade voices that work on BOTH Free and Paid ElevenLabs tiers
 VOICE_POOLS: dict[str, list[str]] = {
-    "hi": ["CNKl99QEbWm8RQ4D8GfC", "MhnQB6oLKSlS0AIJzxtO"],
-    "en": ["xYrwTY3IRh6VBodoZUNN", "JTlYtJrcTzPC71hMLOxo"],
-    "ja": ["RxivyypsDodFBfmDDOZF"],
-    "default": ["nUX4UWK0Tf1qh5zvFZWR", "ljCTqT1biPnI7ZjS5gyi"],
+    "hi": ["cgSgspJ2msm6clMCkdW9", "FGY2WhTYpPnrIDTdsKH5"],
+    "en": ["cgSgspJ2msm6clMCkdW9", "EXAVITQu4vr4xnSDxMaL", "FGY2WhTYpPnrIDTdsKH5"],
+    "ja": ["pFZP5JQG7iQjIQuC4Bku", "cgSgspJ2msm6clMCkdW9"],
+    "default": ["cgSgspJ2msm6clMCkdW9", "FGY2WhTYpPnrIDTdsKH5", "EXAVITQu4vr4xnSDxMaL"],
 }
 
 # Pre-written bored/spontaneous voice lines
@@ -162,7 +163,7 @@ async def convert_oga_to_wav(oga_bytes: bytes) -> bytes | None:
     except asyncio.TimeoutError:
         log.warning("[VoiceEngine] FFmpeg oga→wav timed out")
     except FileNotFoundError:
-        log.error("[VoiceEngine] FFmpeg not found! Install ffmpeg.")
+        log.warning("[VoiceEngine] FFmpeg not found on host (optional, falling back to direct stream)")
     except Exception as e:
         log.error(f"[VoiceEngine] oga→wav error: {e}")
     return None
@@ -186,7 +187,7 @@ async def convert_mp3_to_ogg(mp3_bytes: bytes) -> bytes | None:
     except asyncio.TimeoutError:
         log.warning("[VoiceEngine] FFmpeg mp3→ogg timed out")
     except FileNotFoundError:
-        log.error("[VoiceEngine] FFmpeg not found! Install ffmpeg.")
+        log.warning("[VoiceEngine] FFmpeg not found on host (optional, falling back to direct stream)")
     except Exception as e:
         log.error(f"[VoiceEngine] mp3→ogg error: {e}")
     return None
@@ -197,20 +198,19 @@ async def convert_mp3_to_ogg(mp3_bytes: bytes) -> bytes | None:
 async def transcribe_voice(voice_bytes: bytes) -> TranscriptionResult | None:
     """
     Transcribes voice note bytes using Groq Whisper (primary) or Gemini (fallback).
-    Returns TranscriptionResult with text, detected language, and duration.
+    Supports direct OGG transmission so FFmpeg is not strictly required.
     """
     wav_data = await convert_oga_to_wav(voice_bytes)
-    if not wav_data:
-        log.warning("[VoiceEngine] Could not convert voice note to WAV")
-        return None
+    audio_data = wav_data if wav_data else voice_bytes
+    audio_format = "wav" if wav_data else "ogg"
 
     # Primary: Groq Whisper
-    result = await _transcribe_groq(wav_data)
+    result = await _transcribe_groq(audio_data, audio_format=audio_format)
     if result:
         return result
 
     # Fallback: Gemini multimodal
-    result = await _transcribe_gemini(wav_data)
+    result = await _transcribe_gemini(audio_data, audio_format=audio_format)
     if result:
         return result
 
@@ -218,15 +218,18 @@ async def transcribe_voice(voice_bytes: bytes) -> TranscriptionResult | None:
     return None
 
 
-async def _transcribe_groq(wav_data: bytes) -> TranscriptionResult | None:
+async def _transcribe_groq(audio_data: bytes, audio_format: str = "wav") -> TranscriptionResult | None:
     """Transcribes audio using Groq's Whisper API."""
     if not config.GROQ_API_KEY:
         return None
 
+    filename = f"voice.{audio_format}"
+    mime = "audio/wav" if audio_format == "wav" else "audio/ogg"
+
     for model in ["whisper-large-v3-turbo", "whisper-large-v3"]:
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
-                files = {"file": ("voice.wav", wav_data, "audio/wav")}
+                files = {"file": (filename, audio_data, mime)}
                 data = {
                     "model": model,
                     "response_format": "verbose_json",
@@ -262,24 +265,25 @@ async def _transcribe_groq(wav_data: bytes) -> TranscriptionResult | None:
     return None
 
 
-async def _transcribe_gemini(wav_data: bytes) -> TranscriptionResult | None:
+async def _transcribe_gemini(audio_data: bytes, audio_format: str = "wav") -> TranscriptionResult | None:
     """Transcribes audio using Gemini Flash multimodal API as fallback."""
     api_key = config.GEMINI_API_KEY
     if not api_key:
         return None
 
     import base64
-    audio_b64 = base64.b64encode(wav_data).decode()
+    audio_b64 = base64.b64encode(audio_data).decode()
+    mime = "audio/wav" if audio_format == "wav" else "audio/ogg" 
 
     try:
         async with httpx.AsyncClient(timeout=25.0) as client:
             res = await client.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}",
+                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}",
                 json={
                     "contents": [{
                         "parts": [
                             {"text": "Transcribe this audio exactly as spoken. On a new line write LANGUAGE: followed by the ISO 639-1 language code (hi, en, ja, etc). Nothing else."},
-                            {"inline_data": {"mime_type": "audio/wav", "data": audio_b64}},
+                            {"inline_data": {"mime_type": mime, "data": audio_b64}},
                         ]
                     }]
                 },
@@ -342,36 +346,42 @@ async def generate_voice_note(
 
 
 async def _tts_elevenlabs(text: str, voice_id: str) -> bytes | None:
-    """Generates voice audio via ElevenLabs streaming REST API."""
-    try:
-        async with httpx.AsyncClient(timeout=25.0) as client:
-            res = await client.post(
-                f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream",
-                headers={
-                    "xi-api-key": config.ELEVENLABS_API_KEY,
-                    "Content-Type": "application/json",
-                    "Accept": "audio/mpeg",
-                },
-                json={
-                    "text": text,
-                    "model_id": "eleven_multilingual_v2",
-                    "voice_settings": {
-                        "stability": 0.40,
-                        "similarity_boost": 0.80,
-                        "style": 0.35,
+    """Generates voice audio via ElevenLabs REST API in native Opus format."""
+    fallback_voice = "cgSgspJ2msm6clMCkdW9"
+    voices_to_try = [voice_id]
+    if voice_id != fallback_voice:
+        voices_to_try.append(fallback_voice)
+
+    for vid in voices_to_try:
+        try:
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                res = await client.post(
+                    f"https://api.elevenlabs.io/v1/text-to-speech/{vid}?output_format=opus_48000_64",
+                    headers={
+                        "xi-api-key": config.ELEVENLABS_API_KEY,
+                        "Content-Type": "application/json",
+                        "Accept": "audio/ogg",
                     },
-                },
-            )
-            if res.status_code == 200 and len(res.content) > 500:
-                mp3_bytes = res.content
-                ogg_bytes = await convert_mp3_to_ogg(mp3_bytes)
-                if ogg_bytes:
-                    log.info(f"[VoiceEngine] ElevenLabs TTS OK ({len(text)} chars, voice={voice_id[:8]})")
-                    return ogg_bytes
-            else:
-                log.warning(f"[VoiceEngine] ElevenLabs TTS → {res.status_code}: {res.text[:150]}")
-    except Exception as e:
-        log.warning(f"[VoiceEngine] ElevenLabs TTS error: {e}")
+                    json={
+                        "text": text,
+                        "model_id": "eleven_multilingual_v2",
+                        "voice_settings": {
+                            "stability": 0.40,
+                            "similarity_boost": 0.80,
+                            "style": 0.35,
+                        },
+                    },
+                )
+                if res.status_code == 200 and len(res.content) > 500:
+                    log.info(f"[VoiceEngine] ElevenLabs TTS OK ({len(text)} chars, voice={vid[:8]})")
+                    return res.content
+                elif res.status_code == 402:
+                    log.warning(f"[VoiceEngine] ElevenLabs voice {vid} requires paid plan (402). Falling back to premade voice...")
+                    continue
+                else:
+                    log.warning(f"[VoiceEngine] ElevenLabs TTS ({vid}) → {res.status_code}: {res.text[:150]}")
+        except Exception as e:
+            log.warning(f"[VoiceEngine] ElevenLabs TTS error ({vid}): {e}")
     return None
 
 
@@ -398,6 +408,8 @@ async def _tts_google(text: str, language: str = "hi") -> bytes | None:
                 if ogg_bytes:
                     log.info(f"[VoiceEngine] Google TTS fallback OK ({safe_lang})")
                     return ogg_bytes
+                log.info(f"[VoiceEngine] Google TTS fallback OK (direct audio, {safe_lang})")
+                return res.content
             else:
                 log.warning(f"[VoiceEngine] Google TTS → {res.status_code}")
     except Exception as e:
