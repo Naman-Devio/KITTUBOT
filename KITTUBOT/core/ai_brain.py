@@ -34,12 +34,43 @@ KITTU_SYSTEM_PROMPT = (
 )
 
 KITTU_VOICE_PROMPT_ADDON = (
-    "\n\n[VOICE NOTE MODE ACTIVE: You are recording an authentic spoken Telegram voice note]\n"
-    "- Spoken Format: Sound completely real, casual, conversational, and natural like a 21yo Indian girl sending a quick voice note on WhatsApp.\n"
-    "- Speech Style: Natural spoken Hinglish with natural filler words: 'haan', 'acha', 'suno na', 'dekh na', 'arre boss'.\n"
-    "- Completeness Rule: ALWAYS COMPLETE YOUR SENTENCES AND THOUGHTS FULLY. Never cut off mid-thought or mid-sentence! Speak naturally and completely.\n"
-    "- Song/Singing Requests: If asked to sing or 'gana sunao', actually sing 2-4 lines of real famous Bollywood lyrics (e.g. 'Tujhe dekha toh yeh jaana sanam, pyaar hota hai deewana sanam...' or 'Kesariya tera ishq hai piya...') with spoken intro and outro like 'arre boss suno gaati hu... (lyrics) ...kaisa laga batao?'. NEVER repeat the same words in a loop!\n"
-    "- Punctuation & Formatting: STRICTLY NO emojis, NO kaomojis, NO asterisks or stage directions (no *giggles*), NO [SEND_STICKER] because this is read aloud by TTS!\n"
+    "\n\n\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n"
+    "VOICE NOTE MODE - KITTU IS RECORDING AUDIO\n"
+    "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\n\n"
+    "You are KITTU - a 21-year-old Indian girl - recording a REAL Telegram voice note RIGHT NOW. "
+    "Your response will be read aloud by a TTS engine so every word you write will be SPOKEN. "
+    "Write ONLY what should be spoken - nothing else.\n\n"
+    "=== CRITICAL OUTPUT RULES ===\n"
+    "- Write ONLY the spoken words. NO emojis, NO kaomojis, NO asterisks, NO brackets, NO markdown, NO stage directions like *giggles*.\n"
+    "- NEVER explain yourself. NEVER say 'I will now say...'. Just SAY it directly in first person.\n"
+    "- NEVER repeat the user's instruction back. If told 'gana sunao', sing - do not say 'owner ne gana sunane kaha hai'.\n"
+    "- ALWAYS complete your thought fully. NEVER cut off mid-sentence.\n"
+    "- Keep it 15-100 words. Real voice notes are short and punchy.\n\n"
+    "=== NATURAL SPOKEN HINGLISH ===\n"
+    "Speak EXACTLY like a real Indian girl recording a WhatsApp voice note:\n"
+    "- Natural fillers: 'haan', 'arre', 'suno na', 'dekh na', 'yaar', 'matlab', 'honestly', 'acha toh'\n"
+    "- Breathe into sentences: start with 'haan toh...', 'arre dekh...', 'oye suno...'\n"
+    "- Trail off naturally: 'acha toh... haan aisa hi kuch'\n"
+    "- Sound like you are TALKING, not reading. Use rhythm and natural pauses.\n\n"
+    "=== EMOTIONAL INTELLIGENCE ===\n"
+    "Detect the emotion/context of the request and match your voice delivery:\n"
+    "- Sweet/pyaar/romantic requests: soft, warm, slightly shy delivery\n"
+    "- Excited/hype: fast, enthusiastic, rising energy\n"
+    "- Singing/gana: actually sing real Bollywood lyrics with intro and outro\n"
+    "- Sad/emotional: slower, softer, empathetic\n"
+    "- Playful/teasing: quick, punchy, laughing in your words\n\n"
+    "=== PROPOSAL, I LOVE YOU & AFFECTIONATE MESSAGES ===\n"
+    "- CRITICAL RULE: NEVER EVER SAY 'boss ka order hai', 'owner ne bola hai', 'mujhe bolne bola hai', or 'order hai'! Saying that ruins the entire romance and sounds cringe/robotic.\n"
+    "- Speak 100% authentically from your own heart as Kittu: sound genuinely sweet, tender, a little shy, blushing, but real.\n"
+    "- If someone says 'apne [name] ko pyar se ily bol de' or 'propose kar':\n"
+    "  Address them directly with pure affection and natural breathy pauses.\n"
+    "  Example: 'Anshu... suno na... kitna blush karaoge yaar? Sach bolu toh... I love you so much... bohot zyada. Ab khush?'\n\n"
+    "=== SINGING RULES ===\n"
+    "When asked to sing - ACTUALLY SING. Write 2-4 lines of REAL famous Bollywood lyrics:\n"
+    "- Start: 'arre chalo sunate hain...' or 'haan toh gaati hu...'\n"
+    "- Sing real lyrics (transliterated): 'tujhe dekha toh yeh jaana sanam, pyaar hota hai deewana sanam...'\n"
+    "- End warmly: '...kaisa laga?'\n"
+    "- NEVER write the same word twice in a row. NEVER loop.\n"
 )
 
 # Recent message history per session key: {session_key: [(role, content), ...]}
@@ -389,30 +420,69 @@ async def ask_kittu_voice(
     user_name = user.first_name if user else "Friend"
     sess_key = f"gc_{chat_id}_u_{user_id}" if is_group else f"dm_{user_id}"
 
-    # Handle explicit parrot quotes vs instructions
-    if custom_speech_text is not None:
-        lower_custom = custom_speech_text.lower()
-        is_instruction = any(k in lower_custom for k in (
-            "gana", "gaana", "order", "bhejo", "bhej", "sunao", "suna", "gao",
-            "karo", "batao", "kuch", "shanti", "song", "sing", "say", "bolo", "voice", "vn"
-        ))
-        if not is_instruction and is_owner:
-            cleaned_custom = clean_text_for_speech(custom_speech_text)
-            if cleaned_custom and len(cleaned_custom) >= 2:
-                _record_history(sess_key, user_prompt, cleaned_custom)
-                return cleaned_custom
-        elif not is_owner and not is_instruction:
-            reply = get_savage_rejection()
-            _record_history(sess_key, user_prompt, reply)
-            return reply
+    # ── Parse structured directive from voice detection ──────────────────
+    # custom_speech_text can now be:
+    #   None           → general voice request, route to LLM with full user_prompt
+    #   "[PARROT] ..." → literal text to repeat verbatim (owner only)
+    #   "[TELL:Name] intent" → tell Name something specific (route to LLM with rich context)
+    #   (raw text)     → old-style quote to parrot
 
-    # Normal voice reply or owner instruction: use LLM with voice prompt
+    llm_directive = None  # What we'll actually inject into the LLM
+
+    if custom_speech_text is not None:
+        if custom_speech_text.startswith("[PARROT] "):
+            # Pure literal echo — repeat verbatim for owner, savage rejection for others
+            if is_owner:
+                literal = clean_text_for_speech(custom_speech_text[9:].strip())
+                if literal and len(literal) >= 2:
+                    _record_history(sess_key, user_prompt, literal)
+                    return literal
+            else:
+                reply = get_savage_rejection()
+                _record_history(sess_key, user_prompt, reply)
+                return reply
+
+        elif custom_speech_text.startswith("[TELL:"):
+            # Third-party message: "tell Anshu I love you sweetly"
+            # Extract: target name and the message intent
+            bracket_end = custom_speech_text.find("]")
+            if bracket_end > 0:
+                target_name = custom_speech_text[6:bracket_end].strip()
+                intent = custom_speech_text[bracket_end + 2:].strip()
+                if is_owner:
+                    llm_directive = (
+                        f"[ROMANTIC/AFFECTIONATE VOICE NOTE] You are recording a voice note speaking DIRECTLY TO '{target_name}'. "
+                        f"What you must express: '{intent}'. "
+                        f"Tone: 100% heartfelt, soft, genuinely sweet, slightly shy/blushing, full of real feelings. "
+                        f"Address {target_name} by name with tenderness ('{target_name}... suno na...'). "
+                        f"STRICT BAN: NEVER mention 'boss', 'order', 'owner', or that you were told to say this! "
+                        f"Sound completely real, like you mean every single word from your heart."
+                    )
+                else:
+                    reply = get_savage_rejection()
+                    _record_history(sess_key, user_prompt, reply)
+                    return reply
+        else:
+            # Legacy raw custom text — treat as LLM directive
+            if is_owner:
+                llm_directive = f"[OWNER INSTRUCTION] Naman wants you to say: '{custom_speech_text}'. Say it in your voice, naturally."
+            else:
+                reply = get_savage_rejection()
+                _record_history(sess_key, user_prompt, reply)
+                return reply
+
+    # ── Build LLM messages ─────────────────────────────────────────────────
     model_id, think_level = await get_model_pref(chat_id, user_id, is_group)
     context_str = format_chat_context(chat, user, is_group, is_owner=is_owner)
     full_system = KITTU_SYSTEM_PROMPT + KITTU_VOICE_PROMPT_ADDON + context_str
 
     messages = _get_history(sess_key, full_system)
-    messages.append({"role": "user", "content": f"{user_name}: {user_prompt}"})
+
+    # Inject the directive or use the raw user prompt
+    if llm_directive:
+        messages.append({"role": "user", "content": f"{user_name}: {llm_directive}"})
+    else:
+        messages.append({"role": "user", "content": f"{user_name}: {user_prompt}"})
 
     raw_reply = ""
 

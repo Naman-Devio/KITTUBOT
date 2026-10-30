@@ -102,31 +102,49 @@ def clean_text_for_speech(text: str) -> str:
 def _detect_voice_request(text: str) -> tuple[bool, str | None]:
     """
     Detects if the user is asking Kittu for a voice note or to say something.
-    Returns (is_voice_request, explicit_quote_or_None).
+
+    Returns (is_voice_request, directive_context_or_None).
+    - directive_context: A structured context string extracted from the request,
+      which tells ask_kittu_voice WHAT to do (sing, say ily to X, etc.)
+      so the LLM gets a clean, pre-parsed instruction instead of raw user text.
     """
     if not text:
         return False, None
 
     lower = text.lower().strip()
 
-    # 1. Explicit quote to repeat / parrot:
-    # Matches: 'kittu ye bol: "hello world"' or 'kittu ye bol: hello world'
+    # ── 1. Literal parrot quote: 'kittu ye bol: "hello world"'
+    # Only match if it looks like a real quoted string, not an instruction
     quote_pat = re.compile(
         r"""(?i)(?:kittu|kitu|billu)?\s*(?:ye|yeh)\s*(?:bol|bolo|bol\s*de|bol\s*do|bata|batao)\s*[:"']\s*(.+?)["']?$""",
-        re.DOTALL
+        re.DOTALL,
     )
     m = quote_pat.search(text)
     if m:
         extracted = m.group(1).strip()
-        # Ensure it is a genuine quote to parrot, NOT an instruction like 'gana sunao' or 'order hai'
         instruction_words = (
             "gana", "gaana", "order", "bhejo", "bhej", "sunao", "suna", "gao",
-            "karo", "batao", "kuch", "shanti", "song", "sing", "say", "voice", "vn"
+            "karo", "batao", "kuch", "shanti", "song", "sing", "say", "voice", "vn",
         )
         if extracted and not any(w in extracted.lower() for w in instruction_words):
-            return True, extracted
+            return True, f"[PARROT] {extracted}"
 
-    # 2. General Voice & Speech Triggers
+    # ── 2. Third-party message: '[name] ko [message] bol de'
+    # "apne anshu ko pyar se ily bolde", "Rahul ko bol de main usse pyar karti hu"
+    third_party_pat = re.compile(
+        r"""(?i)(?:apne?\s+|mere?\s+)?(\w+)\s+ko\s+(.+?)\s+(?:bol\s*de|bol\s*do|bol\s*do|keh\s*de|keh\s*do|bolde|kardo|bolo)""",
+        re.DOTALL,
+    )
+    m2 = third_party_pat.search(lower)
+    if m2:
+        target_name = m2.group(1).strip().title()
+        message_intent = m2.group(2).strip()
+        # Filter out non-person triggers
+        non_person_words = ("voice", "gana", "song", "kuch", "mujhe", "meko", "yeh", "ye", "woh")
+        if target_name.lower() not in non_person_words:
+            return True, f"[TELL:{target_name}] {message_intent}"
+
+    # ── 3. General Voice & Speech Triggers
     triggers = [
         # Voice note / message keywords
         "voice message", "voice msg", "voice note", "voice bhejo", "voice bhej", "voice send",
@@ -135,18 +153,18 @@ def _detect_voice_request(text: str) -> tuple[bool, str | None]:
         # Spoken request keywords
         "bol ke", "bol kar", "bolke", "bolkar", "bol de na", "bol do na", "bol do", "bol de",
         "bol na voice", "bolo na voice", "bol ke suna", "bol ke sunao", "bolke suna", "bolke sunao",
-        # Awaz / Voice appreciation
+        # Awaz / Voice
         "awaz sunao", "awaaz sunao", "awaz suna", "awaaz suna",
         "awaz sunni", "awaaz sunni", "awaz sunna", "awaaz sunna",
         "apni awaz", "apni awaaz", "awaz sunau", "awaaz sunau",
-        # Singing / Song keywords
+        # Singing / Song
         "gana sunao", "gaana sunao", "gana gao", "gaana gao", "gana suna", "gaana suna",
         "gaana suna de", "gana suna do", "gana suna na", "gaana suna na",
         "sing a song", "sing for me", "sing song", "singing",
-        # English voice keywords
+        # English voice
         "send voice", "send me voice", "send me a voice", "send voice note", "send voice message",
-        "speak in voice", "talk in voice", "send audio", "voice call",
-        # Relationship / Propose in voice
+        "speak in voice", "talk in voice", "send audio",
+        # Propose / ily
         "propose kar", "propose karo", "propose kardo", "propose kr",
         "i love you bol", "ily bol",
     ]
@@ -178,7 +196,7 @@ async def convert_oga_to_wav(oga_bytes: bytes) -> bytes | None:
     except asyncio.TimeoutError:
         log.warning("[VoiceEngine] FFmpeg oga→wav timed out")
     except FileNotFoundError:
-        log.warning("[VoiceEngine] FFmpeg not found on host (optional, falling back to direct stream)")
+        log.debug("[VoiceEngine] FFmpeg not installed - falling back to direct OGG stream (install ffmpeg for better compatibility)")
     except Exception as e:
         log.error(f"[VoiceEngine] oga→wav error: {e}")
     return None
@@ -202,7 +220,7 @@ async def convert_mp3_to_ogg(mp3_bytes: bytes) -> bytes | None:
     except asyncio.TimeoutError:
         log.warning("[VoiceEngine] FFmpeg mp3→ogg timed out")
     except FileNotFoundError:
-        log.warning("[VoiceEngine] FFmpeg not found on host (optional, falling back to direct stream)")
+        log.debug("[VoiceEngine] FFmpeg not installed - skipping WAV->OGG conversion (Sarvam/Rumik return native OGG)")
     except Exception as e:
         log.error(f"[VoiceEngine] mp3→ogg error: {e}")
     return None
@@ -445,16 +463,33 @@ async def _tts_rumik(
     }
 
     if model == "muga":
+        lower = text.lower()
+        if any(w in lower for w in ("i love you", "ily", "pyar", "jaan", "shona", "sweet", "suno na")):
+            tone = "[happy]"
+        elif any(w in lower for w in ("arre", "bhai", "haha", "suno suno", "party", "nacho", "jeet")):
+            tone = "[excited]"
+        elif any(w in lower for w in ("sad", "dukh", "dard", "sorry", "rona")):
+            tone = "[sad]"
+        elif any(w in lower for w in ("gussa", "pagal", "chup", "hatt")):
+            tone = "[angry]"
+        else:
+            tone = "[happy]"
+
         payload = {
             "model": "muga",
-            "text": f"[cheerful] {text[:500]}",
+            "text": f"{tone} {text[:500]}",
             "audio_format": "opus",
+            "temperature": 0.7,
         }
     else:
+        lower = text.lower()
+        desc = "Young cheerful Indian girl speaking sweet casual Hindi"
+        if any(w in lower for w in ("i love you", "ily", "pyar", "jaan")):
+            desc = "Young affectionate Indian girl speaking soft sweet Hinglish"
         payload = {
             "model": "mulberry",
             "text": text[:500],
-            "description": "Young cheerful Indian girl speaking sweet casual Hindi",
+            "description": desc,
             "audio_format": "opus",
         }
 
